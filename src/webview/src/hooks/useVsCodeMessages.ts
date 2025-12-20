@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { addMessageListener, postMessage } from '@/lib/vscode';
 import { useStore } from './useStore';
-import type { Message, HttpRequest, HttpResponse } from '@/types';
+import type { Message, HttpRequest, HttpResponse, HistoryItem, CollectionItem } from '@/types';
 import { generateId } from '@/lib/utils';
 
 export function useVsCodeMessages() {
@@ -14,7 +14,6 @@ export function useVsCodeMessages() {
     setEnvironments,
     setActiveEnvironments,
     setHistory,
-    addToHistory,
     setCollections,
   } = useStore();
 
@@ -47,12 +46,11 @@ export function useVsCodeMessages() {
           break;
 
         case 'historyUpdated':
-          setHistory(message.payload as typeof useStore.getState extends () => infer S ? S extends { history: infer H } ? H : never : never);
+          setHistory(message.payload as HistoryItem[]);
           break;
 
         case 'collectionsUpdated':
-          console.log('[webview] Received collectionsUpdated:', message.payload);
-          setCollections(message.payload as typeof useStore.getState extends () => infer S ? S extends { collections: infer C } ? C : never : never);
+          setCollections(message.payload as CollectionItem[]);
           break;
 
         case 'setRequest':
@@ -78,15 +76,8 @@ export function useVsCodeMessages() {
 
       const requestId = generateId();
       postMessage('sendRequest', req, requestId);
-
-      // Add to history
-      addToHistory({
-        id: requestId,
-        request: req,
-        timestamp: Date.now(),
-      });
     },
-    [currentRequest, setLoading, setError, setResponse, addToHistory]
+    [currentRequest, setLoading, setError, setResponse]
   );
 
   // Request environments from VSCode
@@ -145,4 +136,3 @@ export function useVsCodeMessages() {
     notifyReady,
   };
 }
-

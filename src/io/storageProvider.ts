@@ -22,23 +22,26 @@ export class StorageProvider extends DisposeProvider {
   }
 
   private baseStoragePath(config: AppConfig) {
+    const configuredLocation = config.responseStorageLocation?.trim();
+    const fallbackLocation = '.httpyac';
+    const resolveLocation = () => configuredLocation && configuredLocation.length > 0 ? configuredLocation : fallbackLocation;
     if (config.responseStorage === 'global') {
-      if (config.responseStorageLocation) {
-        return vscode.Uri.joinPath(this.storageUri, config.responseStorageLocation);
+      if (configuredLocation && configuredLocation.length > 0) {
+        return vscode.Uri.joinPath(this.storageUri, configuredLocation);
       }
       return this.storageUri;
     }
     const currentUri = vscode.window.activeTextEditor?.document.uri;
     if (currentUri) {
       if (config.responseStorage === 'file') {
-        return vscode.Uri.joinPath(currentUri, '..');
+        const folderUri = vscode.Uri.joinPath(currentUri, '..');
+        return vscode.Uri.joinPath(folderUri, resolveLocation());
       }
       if (config.responseStorage === 'workspace') {
         const baseUri = vscode.workspace.getWorkspaceFolder(currentUri)?.uri;
-        if (baseUri && config.responseStorageLocation) {
-          return vscode.Uri.joinPath(baseUri, config.responseStorageLocation);
+        if (baseUri) {
+            return vscode.Uri.joinPath(baseUri, resolveLocation());
         }
-        return baseUri;
       }
     }
     return undefined;

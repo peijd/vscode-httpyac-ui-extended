@@ -177,7 +177,13 @@ export class TestRunner {
       const config = getConfigSetting();
 
       const testItemUri = testItem.uri;
-      const httpFile = await this.documentStore.getWithUri(testItemUri);
+      const openDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === testItemUri.toString());
+      const httpFile = openDocument
+        ? await this.documentStore.getHttpFile(openDocument)
+        : await this.documentStore.getWithUri(testItemUri);
+      if (!httpFile) {
+        return undefined;
+      }
       const line = testItem.range?.start.line || 0;
       const httpRegion = httpFile.httpRegions.find(obj => obj.symbol.startLine <= line && obj.symbol.endLine >= line);
       const context: httpyac.HttpFileSendContext | httpyac.HttpRegionSendContext = {

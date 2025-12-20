@@ -80,7 +80,6 @@ export class HistoryController extends DisposeProvider implements vscode.TreeDat
 
   @errorHandler()
   private async clearHistory(): Promise<void> {
-    this.documentStore.clear();
     await this.responseStore.clear();
   }
 

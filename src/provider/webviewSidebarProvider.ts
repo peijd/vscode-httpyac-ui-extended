@@ -1,22 +1,16 @@
 import * as vscode from 'vscode';
 import { DisposeProvider } from '../utils';
-import { DocumentStore } from '../documentStore';
-import { ResponseStore } from '../responseStore';
 import { WebviewMessageHandler, Message } from '../webview-bridge';
 
 export class WebviewSidebarProvider extends DisposeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'httpyacRequestBuilder';
 
   private view?: vscode.WebviewView;
-  private readonly messageHandler: WebviewMessageHandler;
-
   constructor(
     private readonly extensionUri: vscode.Uri,
-    documentStore: DocumentStore,
-    responseStore: ResponseStore
+    private readonly messageHandler: WebviewMessageHandler
   ) {
     super();
-    this.messageHandler = new WebviewMessageHandler(documentStore, responseStore);
   }
 
   public resolveWebviewView(
@@ -41,6 +35,7 @@ export class WebviewSidebarProvider extends DisposeProvider implements vscode.We
         await this.messageHandler.handleMessage(message, webviewView.webview);
       })
     );
+    this.subscriptions.push(this.messageHandler.attach(webviewView.webview));
 
     // Handle visibility changes
     this.subscriptions.push(
@@ -94,4 +89,3 @@ function getNonce(): string {
   }
   return text;
 }
-

@@ -6,6 +6,7 @@ import * as provider from './provider';
 import { ResponseStore } from './responseStore';
 import * as httpyac from 'httpyac';
 import * as vscode from 'vscode';
+import { WebviewMessageHandler } from './webview-bridge';
 
 export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi {
   const storageProvider = new StorageProvider(context.globalStorageUri);
@@ -14,12 +15,11 @@ export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi 
 
   const storeController = new provider.StoreController(documentStore, responseStore);
 
+  // Shared webview message handler
+  const webviewMessageHandler = new WebviewMessageHandler(documentStore, responseStore, storeController);
+
   // Create webview sidebar provider
-  const webviewSidebarProvider = new provider.WebviewSidebarProvider(
-    context.extensionUri,
-    documentStore,
-    responseStore
-  );
+  const webviewSidebarProvider = new provider.WebviewSidebarProvider(context.extensionUri, webviewMessageHandler);
 
   context.subscriptions.push(
     ...[
@@ -50,13 +50,14 @@ export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi 
         new provider.HttpDocumentSymbolProvider(documentStore)
       ),
       storageProvider,
+      webviewMessageHandler,
       // Register webview sidebar provider
       vscode.window.registerWebviewViewProvider(
         provider.WebviewSidebarProvider.viewType,
         webviewSidebarProvider
       ),
       // Register webview panel commands
-      ...provider.WebviewPanelProvider.registerCommands(context, documentStore, responseStore),
+      ...provider.WebviewPanelProvider.registerCommands(context, webviewMessageHandler),
     ]
   );
   vscode.commands.executeCommand(

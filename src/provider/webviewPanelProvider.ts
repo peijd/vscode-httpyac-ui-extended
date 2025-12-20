@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
 import { DisposeProvider } from '../utils';
-import { DocumentStore } from '../documentStore';
-import { ResponseStore } from '../responseStore';
 import { WebviewMessageHandler, Message, HttpRequest } from '../webview-bridge';
 import { commands } from '../config';
 
@@ -16,12 +14,11 @@ export class WebviewPanelProvider extends DisposeProvider {
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri,
-    documentStore: DocumentStore,
-    responseStore: ResponseStore
+    messageHandler: WebviewMessageHandler
   ) {
     super();
     this.panel = panel;
-    this.messageHandler = new WebviewMessageHandler(documentStore, responseStore);
+    this.messageHandler = messageHandler;
 
     // Set the webview's html content
     this.panel.webview.html = this.getHtmlForWebview();
@@ -40,6 +37,7 @@ export class WebviewPanelProvider extends DisposeProvider {
         await this.messageHandler.handleMessage(message, this.panel.webview);
       })
     );
+    this.subscriptions.push(this.messageHandler.attach(this.panel.webview));
 
     // Handle panel disposal
     this.panel.onDidDispose(() => this.dispose(), null, this.subscriptions);
@@ -47,8 +45,7 @@ export class WebviewPanelProvider extends DisposeProvider {
 
   public static createOrShow(
     extensionUri: vscode.Uri,
-    documentStore: DocumentStore,
-    responseStore: ResponseStore,
+    messageHandler: WebviewMessageHandler,
     request?: HttpRequest
   ): WebviewPanelProvider {
     const column = vscode.window.activeTextEditor
@@ -81,8 +78,7 @@ export class WebviewPanelProvider extends DisposeProvider {
     WebviewPanelProvider.currentPanel = new WebviewPanelProvider(
       panel,
       extensionUri,
-      documentStore,
-      responseStore
+      messageHandler
     );
 
     if (request) {
@@ -94,15 +90,13 @@ export class WebviewPanelProvider extends DisposeProvider {
 
   public static registerCommands(
     context: vscode.ExtensionContext,
-    documentStore: DocumentStore,
-    responseStore: ResponseStore
+    messageHandler: WebviewMessageHandler
   ): vscode.Disposable[] {
     return [
       vscode.commands.registerCommand(commands.openRequestEditor, (request?: HttpRequest) => {
         WebviewPanelProvider.createOrShow(
           context.extensionUri,
-          documentStore,
-          responseStore,
+          messageHandler,
           request
         );
       }),
@@ -169,4 +163,3 @@ function getNonce(): string {
   }
   return text;
 }
-
