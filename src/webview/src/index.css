@@ -59,6 +59,7 @@ select {
   border-radius: 4px;
   font-family: inherit;
   font-size: inherit;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 input::placeholder,
@@ -97,6 +98,13 @@ button:disabled {
 .method-patch { color: #50e3c2; }
 .method-options { color: #0d5aa7; }
 .method-head { color: #9012fe; }
+
+.method-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
 
 /* Status code colors */
 .status-2xx { color: #49cc90; }
@@ -211,4 +219,3 @@ button:disabled {
 .text-\[var\(--vscode-symbolIcon-nullForeground\)\] {
   color: var(--vscode-symbolIcon-nullForeground, #569cd6);
 }
-

@@ -21,6 +21,13 @@
       "script": "esbuild",
       "problemMatcher": [],
       "group": "build"
+    },
+    {
+      "label": "build:webview",
+      "type": "npm",
+      "script": "build:webview",
+      "problemMatcher": [],
+      "group": "build"
     }
   ]
 }

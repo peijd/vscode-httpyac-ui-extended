@@ -2,6 +2,26 @@ import * as httpyac from 'httpyac';
 import type { HttpRequest, KeyValue, AuthConfig, RequestBody, HttpMethod } from './messageTypes';
 import { v4 as uuidv4 } from 'uuid';
 
+function getMetaText(metaData: httpyac.HttpRegion['metaData'], key: string): string | undefined {
+  const value = metaData?.[key];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
+export function getHttpRegionDisplayName(httpRegion: httpyac.HttpRegion): string {
+  return (
+    getMetaText(httpRegion.metaData, 'title') ||
+    getMetaText(httpRegion.metaData, 'name') ||
+    httpRegion.symbol?.name?.trim() ||
+    'Request'
+  );
+}
+
 /**
  * Converts a webview HttpRequest to .http file content
  */
@@ -100,7 +120,7 @@ export function convertHttpRegionToRequest(
 
   const request = httpRegion.request;
   const id = uuidv4();
-  const name = httpRegion.symbol?.name || 'Request';
+  const name = getHttpRegionDisplayName(httpRegion);
 
   // Parse method
   const method = (request.method?.toUpperCase() || 'GET') as HttpMethod;

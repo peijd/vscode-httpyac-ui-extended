@@ -101,6 +101,11 @@ export function useVsCodeMessages() {
     postMessage('getCollections');
   }, []);
 
+  // Create new collection (.http file)
+  const createCollection = useCallback(() => {
+    postMessage('createCollection');
+  }, []);
+
   // Save request to .http file
   const saveToHttpFile = useCallback(
     (request?: HttpRequest) => {
@@ -130,6 +135,7 @@ export function useVsCodeMessages() {
     selectEnvironments,
     requestHistory,
     requestCollections,
+    createCollection,
     saveToHttpFile,
     openInEditor,
     openHttpFile,

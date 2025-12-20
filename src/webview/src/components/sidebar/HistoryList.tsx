@@ -54,7 +54,7 @@ export const HistoryList: React.FC = () => {
             {history.map((item) => (
               <div
                 key={item.id}
-                className="group p-2 rounded hover:bg-vscode-list-hover cursor-pointer mb-1"
+                className="group relative p-2 rounded-md border border-transparent transition-colors hover:bg-vscode-list-hover hover:border-[var(--vscode-sideBar-border)] cursor-pointer mb-1"
                 onClick={() => handleItemClick(item)}
               >
                 <div className="flex items-center gap-2">
@@ -94,4 +94,3 @@ export const HistoryList: React.FC = () => {
     </div>
   );
 };
-

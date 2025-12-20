@@ -10,6 +10,7 @@ export type MessageType =
   | 'historyUpdated'
   | 'getCollections'
   | 'collectionsUpdated'
+  | 'createCollection'
   | 'saveToHttpFile'
   | 'openInEditor'
   | 'openHttpFile'
@@ -116,4 +117,3 @@ export interface CollectionItem {
   request?: HttpRequest;
   httpFilePath?: string;
 }
-

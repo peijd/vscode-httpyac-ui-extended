@@ -123,6 +123,7 @@ export type MessageType =
   | 'historyUpdated'
   | 'getCollections'
   | 'collectionsUpdated'
+  | 'createCollection'
   | 'saveToHttpFile'
   | 'openInEditor'
   | 'openHttpFile'
@@ -148,4 +149,3 @@ export interface VsCodeApi {
   getState(): unknown;
   setState(state: unknown): void;
 }
-

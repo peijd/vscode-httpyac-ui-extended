@@ -5,7 +5,7 @@ import { ResponseStore } from '../responseStore';
 import { getEnvironmentConfig } from '../config';
 import { StoreController } from '../provider/storeController';
 import type { Message, HttpRequest, HttpResponse, CollectionItem, HistoryItem, KeyValue, TestResult } from './messageTypes';
-import { convertHttpRegionToRequest, convertRequestToHttpContent } from './httpFileConverter';
+import { convertHttpRegionToRequest, convertRequestToHttpContent, getHttpRegionDisplayName } from './httpFileConverter';
 import { toUri } from '../io';
 import { ResponseItem } from '../view';
 
@@ -66,6 +66,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
         break;
       case 'getCollections':
         await this.broadcastCollections(webview);
+        break;
+      case 'createCollection':
+        await this.handleCreateCollection();
         break;
       case 'saveToHttpFile':
         await this.handleSaveToHttpFile(message.payload as HttpRequest);
@@ -172,6 +175,34 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleCreateCollection(): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+      const defaultUri = workspaceFolder
+        ? vscode.Uri.joinPath(workspaceFolder, 'new-collection.http')
+        : vscode.Uri.file('new-collection.http');
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri,
+        saveLabel: 'Create Collection',
+        filters: {
+          'HTTP Files': ['http', 'rest'],
+        },
+      });
+
+      if (!uri) {
+        return;
+      }
+
+      const template = ['### New Request', 'GET https://example.com', ''].join('\n');
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(template, 'utf-8'));
+      await vscode.window.showTextDocument(uri, { preview: false });
+      vscode.window.showInformationMessage('Collection created: ' + uri.fsPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      vscode.window.showErrorMessage('Failed to create collection: ' + message);
+    }
+  }
+
   private async handleOpenHttpFile(filePath: string): Promise<void> {
     try {
       const uri = vscode.Uri.file(filePath);
@@ -189,7 +220,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       } else if (requests.length > 1) {
         const picked = await vscode.window.showQuickPick(
           requests.map((obj, index) => ({
-            label: obj.region.symbol.name || `Request ${index + 1}`,
+            label: getHttpRegionDisplayName(obj.region) || `Request ${index + 1}`,
             description: obj.region.request?.url,
             request: obj.request as HttpRequest,
           })),
@@ -240,25 +271,48 @@ export class WebviewMessageHandler implements vscode.Disposable {
   private async collectEnvironmentState() {
     const environments: Array<{ name: string; variables: Record<string, string> }> = [];
     const active: string[] = [];
-    const httpFile = await this.documentStore.getCurrentHttpFile();
+    const httpFile = await this.getHttpFileForEnvironment();
     if (httpFile) {
       const config = await getEnvironmentConfig(httpFile.fileName);
-      if (config.environments) {
-        for (const [name, vars] of Object.entries(config.environments)) {
-          if (name !== '$shared') {
-            environments.push({
-              name,
-              variables: this.normalizeVariables(vars),
+      const envNames = await httpyac.getEnvironments({
+        httpFile,
+        config,
+      });
+      const envEntries = await Promise.all(
+        envNames
+          .filter(name => name && name !== '$shared')
+          .map(async name => {
+            const variables = await httpyac.getVariables({
+              httpFile: { ...httpFile },
+              activeEnvironment: [name],
+              config,
             });
-          }
-        }
-      }
+            return {
+              name,
+              variables: this.normalizeVariables(variables),
+            };
+          })
+      );
+      environments.push(...envEntries);
       const activeEnv = this.documentStore.getActiveEnvironment(httpFile);
       if (activeEnv) {
         active.push(...activeEnv);
       }
     }
     return { environments, active };
+  }
+
+  private async getHttpFileForEnvironment(): Promise<httpyac.HttpFile | undefined> {
+    const current = await this.documentStore.getCurrentHttpFile();
+    if (current) {
+      return current;
+    }
+    const existing = this.documentStore.getAll();
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    const workspaceFiles = await this.getWorkspaceHttpFiles();
+    return workspaceFiles[0];
   }
 
   private normalizeVariables(vars: httpyac.Variables | undefined): Record<string, string> {
@@ -429,7 +483,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
   }
 
   private async buildCollections(): Promise<CollectionItem[]> {
-    const httpFiles = this.documentStore.getAll();
+    const httpFiles = await this.getWorkspaceHttpFiles();
     const roots: CollectionItem[] = [];
     const folderMap = new Map<string, CollectionItem>();
 
@@ -469,6 +523,39 @@ export class WebviewMessageHandler implements vscode.Disposable {
     return roots;
   }
 
+  private async getWorkspaceHttpFiles(): Promise<httpyac.HttpFile[]> {
+    const httpFilesById = new Map<string, httpyac.HttpFile>();
+    const existing = this.documentStore.getAll();
+    for (const httpFile of existing) {
+      const key = httpyac.io.fileProvider.toString(httpFile.fileName);
+      httpFilesById.set(key, httpFile);
+    }
+
+    if (vscode.workspace.workspaceFolders?.length) {
+      const extensions = ['http', 'rest'];
+      const files = await vscode.workspace.findFiles(`**/*.{${extensions.join(',')}}`);
+      const loadedFiles = await Promise.all(
+        files.map(async uri => {
+          try {
+            return await this.documentStore.getWithUri(uri);
+          } catch (error) {
+            console.error('Failed to load http file:', uri.fsPath, error);
+            return undefined;
+          }
+        })
+      );
+      for (const httpFile of loadedFiles) {
+        if (!httpFile) {
+          continue;
+        }
+        const key = httpyac.io.fileProvider.toString(httpFile.fileName);
+        httpFilesById.set(key, httpFile);
+      }
+    }
+
+    return Array.from(httpFilesById.values());
+  }
+
   private ensureFolder(
     roots: CollectionItem[],
     folderMap: Map<string, CollectionItem>,
@@ -506,11 +593,12 @@ export class WebviewMessageHandler implements vscode.Disposable {
     if (!request) {
       return undefined;
     }
+    const displayName = getHttpRegionDisplayName(region);
     return {
       id,
-      name: request.name || region.symbol.name || request.url,
+      name: displayName || request.name || region.symbol.name || request.url,
       type: 'request',
-      request,
+      request: { ...request, name: displayName || request.name },
       httpFilePath: uri.fsPath,
     };
   }
