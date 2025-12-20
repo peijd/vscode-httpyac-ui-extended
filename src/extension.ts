@@ -13,6 +13,14 @@ export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi 
   const responseStore = new ResponseStore(storageProvider);
 
   const storeController = new provider.StoreController(documentStore, responseStore);
+
+  // Create webview sidebar provider
+  const webviewSidebarProvider = new provider.WebviewSidebarProvider(
+    context.extensionUri,
+    documentStore,
+    responseStore
+  );
+
   context.subscriptions.push(
     ...[
       documentStore,
@@ -42,6 +50,13 @@ export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi 
         new provider.HttpDocumentSymbolProvider(documentStore)
       ),
       storageProvider,
+      // Register webview sidebar provider
+      vscode.window.registerWebviewViewProvider(
+        provider.WebviewSidebarProvider.viewType,
+        webviewSidebarProvider
+      ),
+      // Register webview panel commands
+      ...provider.WebviewPanelProvider.registerCommands(context, documentStore, responseStore),
     ]
   );
   vscode.commands.executeCommand(

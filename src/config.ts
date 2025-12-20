@@ -24,6 +24,7 @@ export const commands = {
   showHistoryResponse: `${APP_NAME}.showHistoryResponse`,
   pruneStorage: `${APP_NAME}.pruneStorage`,
   resetOutputChannel: `${APP_NAME}.resetOutputChannel`,
+  openRequestEditor: `${APP_NAME}.openRequestEditor`,
 };
 
 export type ResponseViewContent = 'body' | 'headers' | 'full' | 'exchange';

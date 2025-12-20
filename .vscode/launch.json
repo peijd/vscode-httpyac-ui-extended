@@ -1,30 +1,20 @@
 {
-	"version": "0.2.0",
-	"configurations": [
-		{
-			"name": "debug",
-			"type": "extensionHost",
-			"request": "launch",
-			"args": [
-				"${workspaceFolder:httpyac.github.io}",
-				"--extensionDevelopmentPath=${workspaceFolder}"
-			],
-			"outFiles": [
-				"${workspaceFolder}/dist/**/*.js"
-			]
-		},
-		{
-			"name": "debug-deep",
-			"type": "extensionHost",
-			"request": "launch",
-			"args": [
-				"${workspaceFolder:httpyac.github.io}",
-				"--extensionDevelopmentPath=${workspaceFolder}"
-			],
-			"outFiles": [
-				"${workspaceFolder}/dist/**/*.js",
-				"${workspaceFolder:httpyac}/dist/**/*.js"
-			]
-		}
-	]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "watch"
+    },
+    {
+      "name": "Run Extension (no build)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"]
+    }
+  ]
 }

@@ -1190,6 +1190,12 @@
         "title": "clears all output channel",
         "category": "httpYac",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "httpyac.openRequestEditor",
+        "title": "Open Request Editor",
+        "category": "httpYac",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -1475,6 +1481,12 @@
     "views": {
       "httpyac-views": [
         {
+          "id": "httpyacRequestBuilder",
+          "name": "Request Builder",
+          "type": "webview",
+          "visibility": "visible"
+        },
+        {
           "id": "httpyacHistory",
           "name": "History",
           "visibility": "collapsed",
@@ -1509,10 +1521,11 @@
   },
   "scripts": {
     "compile-web": "esbuild ./src/extension.ts --bundle --outfile=dist/browser.js --sourcemap --platform=browser --format=cjs --external:vscode",
-    "compile": "npm run esbuild -- --minify",
+    "build:webview": "cd src/webview && npm install && npm run build",
+    "compile": "npm run build:webview && npm run esbuild -- --minify",
     "esbuild": "esbuild ./src/extension.ts --bundle --outdir=dist/ --sourcemap --platform=node --external:vscode --format=cjs",
-    "eslint": "eslint src --ext ts",
-    "format": "prettier --write --parser typescript \"src/**/*.ts?(x)\"",
+    "eslint": "eslint src --ext ts --ignore-pattern 'src/webview/**'",
+    "format": "prettier --write --parser typescript \"src/**/*.ts?(x)\" --ignore-path .prettierignore",
     "lint": "npm run format && npm run eslint && npm run lockfile-lint && tsc --noEmit",
     "lockfile-lint": "lockfile-lint --path package-lock.json --validate-https --allowed-hosts npm --validate-checksum --validate-integrity",
     "package": "npx vsce package",
@@ -1522,7 +1535,8 @@
     "tsc-watch": "tsc --watch",
     "tsc": "tsc --b",
     "vscode:prepublish": "npm run compile",
-    "watch": "npm run esbuild -- --watch"
+    "watch": "npm run esbuild -- --watch",
+    "watch:webview": "cd src/webview && npm run dev"
   },
   "lint-staged": {
     "*.js": [

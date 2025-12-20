@@ -1,0 +1,82 @@
+### 1. 获取当前 IP（httpbin）
+GET https://httpbin.org/ip
+
+### 2. GET 请求带查询参数（httpbin）
+GET https://httpbin.org/get?name=Grok&age=1
+Accept: application/json
+
+### 3. GET 请求带自定义 Header（httpbin）
+GET https://httpbin.org/headers
+User-Agent: Grok-Test-Client
+X-Test-Header: hello-xai
+
+### 4. POST 请求 - JSON Body（httpbin 会回显）
+POST https://httpbin.org/post
+Content-Type: application/json
+
+{
+  "title": "测试 POST",
+  "body": "这是一个来自 Grok 的测试请求",
+  "userId": 1
+}
+
+### 5. POST 请求 - Form 数据（httpbin）
+POST https://httpbin.org/post
+Content-Type: application/x-www-form-urlencoded
+
+key2=value1&key2=中文测试&array[]=a&array[]=b
+### 6. 获取假用户列表（jsonplaceholder）
+GET {{host}}/users
+
+### 7. 获取单个假用户（jsonplaceholder）
+GET https://jsonplaceholder.typicode.com/users/1
+
+### 8. 创建新帖子（jsonplaceholder - 会返回模拟数据）
+POST https://jsonplaceholder.typicode.com/posts
+Content-Type: application/json
+
+{
+  "title": "foo",
+  "body": "bar",
+  "userId": 1
+}
+
+> {% 
+  // 响应处理脚本示例：检查状态码并打印标题
+  client.test("创建成功", function() {
+    client.assert(response.status === 201, "预期 201 但收到 " + response.status);
+  });
+  console.log("新帖子的 ID:", response.body.id);
+%}
+
+### 9. 更新帖子（PUT - jsonplaceholder）
+PUT https://jsonplaceholder.typicode.com/posts/1
+Content-Type: application/json
+
+{
+  "id": 1,
+  "title": "updated title",
+  "body": "updated body",
+  "userId": 1
+}
+
+### 10. 删除帖子（DELETE - jsonplaceholder）
+DELETE https://jsonplaceholder.typicode.com/posts/1
+
+### 11. 测试不同状态码（httpbin）
+GET https://httpbin.org/status/404
+
+### 12. 测试延迟响应（httpbin - 3秒延迟）
+GET https://httpbin.org/delay/3
+
+### 13. 登录模拟（reqres.in - 会返回 token）
+POST https://reqres.in/api/login
+Content-Type: application/json
+
+{
+  "email": "eve.holt@reqres.in",
+  "password": "cityslicka"
+}
+
+### 14. 获取用户列表（reqres.in）
+GET https://reqres.in/api/users?page=2

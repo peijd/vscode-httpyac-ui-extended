@@ -18,3 +18,5 @@ export * from './test';
 export * from './userSessionTreeDataProvider';
 export * from './variablesHoverProvider';
 export * from './variablesTreeDataProvider';
+export * from './webviewSidebarProvider';
+export * from './webviewPanelProvider';
