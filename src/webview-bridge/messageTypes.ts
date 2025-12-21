@@ -13,6 +13,8 @@ export type MessageType =
   | 'createCollection'
   | 'saveToHttpFile'
   | 'saveRequest'
+  | 'getRequestText'
+  | 'requestText'
   | 'openInEditor'
   | 'openHttpFile'
   | 'openSourceLocation'
@@ -61,7 +63,7 @@ export interface AuthConfig {
 }
 
 // Request body types
-export type BodyType = 'none' | 'json' | 'form' | 'formdata' | 'raw' | 'binary';
+export type BodyType = 'none' | 'json' | 'form' | 'formdata' | 'raw' | 'binary' | 'graphql' | 'ndjson' | 'xml';
 
 export interface RequestBody {
   type: BodyType;

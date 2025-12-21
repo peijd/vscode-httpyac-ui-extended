@@ -70,10 +70,10 @@ export const SidebarApp: React.FC = () => {
   return (
     <div className="flex flex-col h-screen bg-[var(--vscode-sideBar-background)]">
       {/* New Request Button */}
-      <div className="p-2 border-b border-[var(--vscode-sideBar-border)]">
+      <div className="p-3 border-b border-[var(--vscode-sideBar-border)]">
         <Button 
           onClick={handleNewRequest}
-          className="w-full justify-start gap-2 bg-[var(--vscode-button-background)] hover:bg-[var(--vscode-button-hoverBackground)] text-[var(--vscode-button-foreground)] shadow-sm"
+          className="w-full justify-start gap-2 bg-[var(--vscode-button-background)] hover:bg-[var(--vscode-button-hoverBackground)] text-[var(--vscode-button-foreground)] shadow-sm ui-hover"
         >
           <Plus className="h-4 w-4" />
           New HTTP Request
@@ -85,23 +85,25 @@ export const SidebarApp: React.FC = () => {
 
       {/* Collections and History tabs */}
       <Tabs defaultValue="collections" className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="px-2 shrink-0 justify-start bg-transparent border-b border-[var(--vscode-sideBar-border)]">
-          <TabsTrigger value="collections" className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-[var(--vscode-focusBorder)] rounded-none">
+        <div className="px-3 pt-2">
+          <TabsList className="pro-tabs w-full justify-start bg-transparent border-b-0">
+            <TabsTrigger value="collections" className="pro-tab gap-1.5">
             <FolderTree className="h-3.5 w-3.5" />
             Collections
-          </TabsTrigger>
-          <TabsTrigger value="history" className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-[var(--vscode-focusBorder)] rounded-none">
+            </TabsTrigger>
+            <TabsTrigger value="history" className="pro-tab gap-1.5">
             <History className="h-3.5 w-3.5" />
             History
-          </TabsTrigger>
-        </TabsList>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="collections" className="flex-1 overflow-hidden m-0">
           <div className="flex flex-col h-full">
-            <div className="flex items-center gap-2 px-2 py-2 border-b border-[var(--vscode-sideBar-border)]">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--vscode-sideBar-border)]">
               <Button
                 onClick={handleCreateCollection}
-                className="h-7 px-2 text-xs gap-1 bg-[var(--vscode-button-secondaryBackground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] text-[var(--vscode-button-secondaryForeground)] shadow-sm"
+                className="h-7 px-2 text-xs gap-1 bg-[var(--vscode-button-secondaryBackground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] text-[var(--vscode-button-secondaryForeground)] shadow-sm ui-hover"
               >
                 <Plus className="h-3 w-3" />
                 New Collection
@@ -117,7 +119,7 @@ export const SidebarApp: React.FC = () => {
                 />
               </div>
               {normalizedFilter ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--vscode-input-border)] text-[var(--vscode-descriptionForeground)] whitespace-nowrap">
+                <span className="ui-chip whitespace-nowrap">
                   匹配 {matchedCount}
                 </span>
               ) : null}

@@ -18,13 +18,13 @@ export class WebviewSidebarProvider extends DisposeProvider implements vscode.We
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): void {
+    void _context;
+    void _token;
     this.view = webviewView;
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
-      ],
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
     };
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview, 'sidebar');

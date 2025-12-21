@@ -10,9 +10,10 @@ interface StatusBadgeProps {
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, statusText, className }) => {
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <span className={cn('font-bold', getStatusColor(status))}>{status}</span>
-      <span className="text-[var(--vscode-descriptionForeground)]">{statusText}</span>
+      <span className={cn('ui-chip font-semibold', getStatusColor(status))}>
+        {status}
+      </span>
+      {statusText ? <span className="text-[var(--vscode-descriptionForeground)]">{statusText}</span> : null}
     </div>
   );
 };
-

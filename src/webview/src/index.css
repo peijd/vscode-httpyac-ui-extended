@@ -7,6 +7,20 @@
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
   background-color: var(--vscode-editor-background);
+
+  --ui-radius: 10px;
+  --ui-radius-sm: 6px;
+  --ui-gap: 8px;
+  --ui-gap-lg: 12px;
+  --ui-ease: cubic-bezier(0.2, 0.6, 0, 1);
+  --ui-fast: 120ms var(--ui-ease);
+  --ui-normal: 180ms var(--ui-ease);
+  --ui-surface-1: var(--vscode-editor-background);
+  --ui-surface-2: var(--vscode-editorWidget-background, var(--vscode-panel-background));
+  --ui-surface-3: var(--vscode-sideBar-background);
+  --ui-border: var(--vscode-panel-border);
+  --ui-muted: var(--vscode-descriptionForeground);
+  --ui-accent: var(--vscode-focusBorder);
 }
 
 body {
@@ -59,7 +73,7 @@ select {
   border-radius: 4px;
   font-family: inherit;
   font-size: inherit;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color var(--ui-fast), background-color var(--ui-fast);
 }
 
 input::placeholder,
@@ -88,6 +102,56 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.ui-topbar {
+  background: var(--ui-surface-2);
+  border-bottom: 1px solid var(--ui-border);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.ui-subbar {
+  background: var(--ui-surface-1);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.ui-card {
+  background: var(--ui-surface-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+}
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--ui-border);
+  color: var(--vscode-foreground);
+  background: var(--vscode-input-background);
+  max-width: 100%;
+}
+
+.ui-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--ui-border);
+}
+
+.ui-hover {
+  transition: all var(--ui-normal);
+}
+
+.ui-hover:hover {
+  transform: translateY(-1px);
 }
 
 /* Method colors (text only, no background) */
@@ -156,6 +220,83 @@ button:disabled {
   resize: vertical;
   min-height: 120px;
   width: 100%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+.json-editor-wrapper {
+  position: relative;
+  min-height: 280px;
+  height: 340px;
+  width: 100%;
+  resize: vertical;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  background-color: var(--vscode-input-background);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  display: grid;
+  grid-template-columns: 48px 1fr;
+}
+
+.json-editor__highlight,
+.json-editor__input {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Monaco', monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.5;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow: auto;
+}
+
+.json-editor__highlight,
+.json-editor__input {
+  left: 48px;
+}
+
+.json-editor__lines {
+  grid-column: 1;
+  padding: 12px 0 12px 8px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Monaco', monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.5;
+  color: var(--vscode-editorLineNumber-foreground);
+  background: var(--vscode-editor-background);
+  border-right: 1px solid var(--vscode-input-border, transparent);
+  overflow: hidden;
+}
+
+.json-editor__line {
+  height: 1.5em;
+  text-align: right;
+  padding-right: 8px;
+}
+
+.json-editor__line.error {
+  color: var(--vscode-errorForeground);
+  font-weight: 600;
+}
+
+.json-editor__highlight {
+  pointer-events: none;
+}
+
+.json-editor__input {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--vscode-editor-foreground, var(--vscode-foreground));
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+.json-editor__input.error {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--vscode-errorForeground);
 }
 
 /* Panel styles */
@@ -180,6 +321,36 @@ button:disabled {
   overflow: hidden;
 }
 
+[data-radix-accordion-content][data-state="open"] {
+  animation: accordionDown var(--ui-normal);
+}
+
+[data-radix-accordion-content][data-state="closed"] {
+  animation: accordionUp var(--ui-normal);
+}
+
+@keyframes accordionDown {
+  from {
+    height: 0;
+    opacity: 0.6;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes accordionUp {
+  from {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0.6;
+  }
+}
+
 /* Tab improvements */
 [role="tablist"] {
   gap: 0;
@@ -191,7 +362,7 @@ button:disabled {
   color: var(--vscode-foreground);
   opacity: 0.7;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s ease;
+  transition: all var(--ui-fast);
 }
 
 [role="tab"]:hover {
@@ -201,6 +372,34 @@ button:disabled {
 [role="tab"][data-state="active"] {
   opacity: 1;
   border-bottom-color: var(--vscode-focusBorder);
+}
+
+.pro-tabs {
+  gap: 6px;
+  padding: 4px;
+  background: var(--ui-surface-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-sm);
+}
+
+.pro-tab {
+  border-radius: var(--ui-radius-sm);
+  padding: 6px 12px;
+  font-size: 12px;
+  opacity: 0.85;
+  border: 1px solid transparent;
+}
+
+.pro-tab[data-state="active"] {
+  opacity: 1;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.pro-tab:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground);
 }
 
 /* Response body syntax highlighting fallbacks */

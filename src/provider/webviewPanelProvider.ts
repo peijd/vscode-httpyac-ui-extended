@@ -48,9 +48,7 @@ export class WebviewPanelProvider extends DisposeProvider {
     messageHandler: WebviewMessageHandler,
     request?: HttpRequest
   ): WebviewPanelProvider {
-    const column = vscode.window.activeTextEditor
-      ? vscode.window.activeTextEditor.viewColumn
-      : undefined;
+    const column = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined;
 
     // If we already have a panel, show it
     if (WebviewPanelProvider.currentPanel) {
@@ -69,17 +67,11 @@ export class WebviewPanelProvider extends DisposeProvider {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, 'dist', 'webview'),
-        ],
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')],
       }
     );
 
-    WebviewPanelProvider.currentPanel = new WebviewPanelProvider(
-      panel,
-      extensionUri,
-      messageHandler
-    );
+    WebviewPanelProvider.currentPanel = new WebviewPanelProvider(panel, extensionUri, messageHandler);
 
     if (request) {
       WebviewPanelProvider.currentPanel.initialRequest = request;
@@ -94,11 +86,7 @@ export class WebviewPanelProvider extends DisposeProvider {
   ): vscode.Disposable[] {
     return [
       vscode.commands.registerCommand(commands.openRequestEditor, (request?: HttpRequest) => {
-        WebviewPanelProvider.createOrShow(
-          context.extensionUri,
-          messageHandler,
-          request
-        );
+        WebviewPanelProvider.createOrShow(context.extensionUri, messageHandler, request);
       }),
     ];
   }

@@ -24,9 +24,9 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
   className,
 }) => {
   return (
-    <div className={cn('', className)}>
+    <div className={cn('ui-card overflow-hidden', className)}>
       <table className="w-full border-collapse">
-        <thead>
+        <thead className="bg-[var(--vscode-editor-background)]">
           <tr className="border-b border-[var(--vscode-panel-border)]">
             <th className="w-8 p-2"></th>
             <th className="text-left p-2 text-xs font-medium text-[var(--vscode-descriptionForeground)]">
@@ -43,7 +43,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
             <tr 
               key={item.id} 
               className={cn(
-                'border-b border-[var(--vscode-panel-border)] hover:bg-[var(--vscode-list-hoverBackground)]',
+                'border-b border-[var(--vscode-panel-border)] hover:bg-[var(--vscode-list-hoverBackground)] transition-colors',
                 !item.enabled && 'opacity-50'
               )}
             >
@@ -114,4 +114,3 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
     </div>
   );
 };
-

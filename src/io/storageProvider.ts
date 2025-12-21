@@ -24,7 +24,8 @@ export class StorageProvider extends DisposeProvider {
   private baseStoragePath(config: AppConfig) {
     const configuredLocation = config.responseStorageLocation?.trim();
     const fallbackLocation = '.httpyac';
-    const resolveLocation = () => configuredLocation && configuredLocation.length > 0 ? configuredLocation : fallbackLocation;
+    const resolveLocation = () =>
+      configuredLocation && configuredLocation.length > 0 ? configuredLocation : fallbackLocation;
     if (config.responseStorage === 'global') {
       if (configuredLocation && configuredLocation.length > 0) {
         return vscode.Uri.joinPath(this.storageUri, configuredLocation);
@@ -40,7 +41,7 @@ export class StorageProvider extends DisposeProvider {
       if (config.responseStorage === 'workspace') {
         const baseUri = vscode.workspace.getWorkspaceFolder(currentUri)?.uri;
         if (baseUri) {
-            return vscode.Uri.joinPath(baseUri, resolveLocation());
+          return vscode.Uri.joinPath(baseUri, resolveLocation());
         }
       }
     }

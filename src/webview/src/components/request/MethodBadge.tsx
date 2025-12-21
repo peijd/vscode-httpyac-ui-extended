@@ -8,9 +8,8 @@ interface MethodBadgeProps {
 
 export const MethodBadge: React.FC<MethodBadgeProps> = ({ method, className }) => {
   return (
-    <span className={cn('method-badge', getMethodColor(method), className)}>
+    <span className={cn('method-badge ui-chip', getMethodColor(method), className)}>
       {method}
     </span>
   );
 };
-

@@ -30,13 +30,13 @@ export const HistoryList: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-3 border-b border-vscode-border">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-vscode-border">
         <h2 className="section-header">History</h2>
         {history.length > 0 && (
           <Button
             variant="ghost"
             size="icon"
-            className="h-5 w-5 text-vscode-error"
+            className="h-6 w-6 text-vscode-error ui-hover"
             onClick={clearHistory}
           >
             <Trash2 className="h-3 w-3" />
@@ -54,7 +54,7 @@ export const HistoryList: React.FC = () => {
             {history.map((item) => (
               <div
                 key={item.id}
-                className="group relative p-2 rounded-md border border-transparent transition-colors hover:bg-vscode-list-hover hover:border-[var(--vscode-sideBar-border)] cursor-pointer mb-1"
+                className="group relative p-2 rounded-md border border-transparent transition-colors hover:bg-vscode-list-hover hover:border-[var(--vscode-sideBar-border)] cursor-pointer mb-1 ui-hover"
                 onClick={() => handleItemClick(item)}
               >
                 <div className="flex items-center gap-2">
@@ -78,7 +78,7 @@ export const HistoryList: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5 opacity-0 group-hover:opacity-100 absolute right-2 top-2"
+                  className="h-5 w-5 opacity-0 group-hover:opacity-100 absolute right-2 top-2 ui-hover"
                   onClick={(e) => {
                     e.stopPropagation();
                     openInEditor(item.request);

@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { formatJson, isJsonContentType, isHtmlContentType } from '@/lib/utils';
+import { formatJson, isJsonContentType, isHtmlContentType, tryParseJson } from '@/lib/utils';
+import { JsonHighlighter } from '@/components/common/JsonHighlighter';
 
 interface ResponseBodyProps {
   body: string;
   contentType: string;
-  viewMode?: 'pretty' | 'raw' | 'preview';
+  viewMode?: 'pretty' | 'raw' | 'preview' | 'tree';
 }
 
 export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, viewMode = 'pretty' }) => {
@@ -17,6 +18,13 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
     }
     return body;
   }, [body, contentType, viewMode]);
+
+  const parsedJson = useMemo(() => {
+    if (!isJsonContentType(contentType)) {
+      return null;
+    }
+    return tryParseJson(body);
+  }, [body, contentType]);
 
   if (!body) {
     return (
@@ -41,11 +49,26 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
     );
   }
 
-  // Pretty or Raw mode
+  if (viewMode === 'pretty' && isJson) {
+    if (parsedJson === null) {
+      return (
+        <div className="p-4 text-[var(--vscode-descriptionForeground)] text-sm">
+          JSON 解析失败，无法折叠展示。
+        </div>
+      );
+    }
+    return (
+      <div className="p-4">
+        <JsonTree data={parsedJson} depth={0} />
+      </div>
+    );
+  }
+
+  // Code or Raw mode
   return (
     <div className="p-4">
-      <pre className="font-mono text-sm whitespace-pre-wrap break-all">
-        {isJson && viewMode === 'pretty' ? (
+      <pre className="font-mono text-sm whitespace-pre overflow-x-auto">
+        {isJson && viewMode === 'tree' ? (
           <JsonHighlighter json={formattedBody} />
         ) : (
           <code>{formattedBody}</code>
@@ -55,89 +78,51 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
   );
 };
 
-// Simple JSON syntax highlighter
-const JsonHighlighter: React.FC<{ json: string }> = ({ json }) => {
-  const lines = json.split('\n');
-  
-  return (
-    <code className="block">
-      {lines.map((line, i) => (
-        <div key={i} className="flex">
-          <span className="select-none text-[var(--vscode-editorLineNumber-foreground)] pr-4 text-right w-8 shrink-0">
-            {i + 1}
-          </span>
-          <span className="flex-1">
-            {highlightJsonLine(line)}
-          </span>
+const JsonTree: React.FC<{ data: unknown; depth: number }> = ({ data, depth }) => {
+  if (data === null) {
+    return <span className="text-[var(--vscode-symbolIcon-nullForeground)]">null</span>;
+  }
+  if (typeof data === 'string') {
+    return <span className="text-[var(--vscode-symbolIcon-stringForeground)]">"{data}"</span>;
+  }
+  if (typeof data === 'number') {
+    return <span className="text-[var(--vscode-symbolIcon-numberForeground)]">{data}</span>;
+  }
+  if (typeof data === 'boolean') {
+    return <span className="text-[var(--vscode-symbolIcon-booleanForeground)]">{String(data)}</span>;
+  }
+  if (Array.isArray(data)) {
+    const label = `Array(${data.length})`;
+    return (
+      <details open={depth < 1} className="ml-2">
+        <summary className="cursor-pointer text-[var(--vscode-foreground)]">{label}</summary>
+        <div className="pl-4 space-y-1">
+          {data.map((item, index) => (
+            <div key={index} className="flex gap-2">
+              <span className="text-[var(--vscode-descriptionForeground)]">{index}:</span>
+              <JsonTree data={item} depth={depth + 1} />
+            </div>
+          ))}
         </div>
-      ))}
-    </code>
-  );
+      </details>
+    );
+  }
+  if (typeof data === 'object') {
+    const entries = Object.entries(data as Record<string, unknown>);
+    const label = `Object(${entries.length})`;
+    return (
+      <details open={depth < 1} className="ml-2">
+        <summary className="cursor-pointer text-[var(--vscode-foreground)]">{label}</summary>
+        <div className="pl-4 space-y-1">
+          {entries.map(([key, value]) => (
+            <div key={key} className="flex gap-2">
+              <span className="text-[var(--vscode-symbolIcon-propertyForeground)]">{key}:</span>
+              <JsonTree data={value} depth={depth + 1} />
+            </div>
+          ))}
+        </div>
+      </details>
+    );
+  }
+  return <span>{String(data)}</span>;
 };
-
-function highlightJsonLine(line: string): React.ReactNode {
-  // Simple regex-based highlighting
-  const parts: React.ReactNode[] = [];
-  let remaining = line;
-  let key = 0;
-
-  // Match strings (keys and values)
-  const stringRegex = /"([^"\\]|\\.)*"/g;
-  let match;
-  let lastIndex = 0;
-
-  while ((match = stringRegex.exec(remaining)) !== null) {
-    // Add text before match
-    if (match.index > lastIndex) {
-      const before = remaining.slice(lastIndex, match.index);
-      parts.push(
-        <span key={key++}>
-          {highlightNonString(before)}
-        </span>
-      );
-    }
-    
-    // Check if it's a key (followed by :)
-    const afterMatch = remaining.slice(match.index + match[0].length);
-    const isKey = afterMatch.trimStart().startsWith(':');
-    
-    parts.push(
-      <span 
-        key={key++} 
-        className={isKey ? 'text-[var(--vscode-symbolIcon-propertyForeground)]' : 'text-[var(--vscode-symbolIcon-stringForeground)]'}
-      >
-        {match[0]}
-      </span>
-    );
-    
-    lastIndex = match.index + match[0].length;
-  }
-  
-  // Add remaining text
-  if (lastIndex < remaining.length) {
-    parts.push(
-      <span key={key++}>
-        {highlightNonString(remaining.slice(lastIndex))}
-      </span>
-    );
-  }
-  
-  return parts.length > 0 ? parts : line;
-}
-
-function highlightNonString(text: string): React.ReactNode {
-  // Highlight numbers, booleans, null
-  return text.split(/(\b(?:true|false|null|\d+(?:\.\d+)?)\b)/g).map((part, i) => {
-    if (/^(true|false)$/.test(part)) {
-      return <span key={i} className="text-[var(--vscode-symbolIcon-booleanForeground)]">{part}</span>;
-    }
-    if (/^null$/.test(part)) {
-      return <span key={i} className="text-[var(--vscode-symbolIcon-nullForeground)]">{part}</span>;
-    }
-    if (/^\d+(?:\.\d+)?$/.test(part)) {
-      return <span key={i} className="text-[var(--vscode-symbolIcon-numberForeground)]">{part}</span>;
-    }
-    return part;
-  });
-}
-

@@ -11,6 +11,7 @@ export function useVsCodeMessages() {
     setResponse,
     setLoading,
     setError,
+    setRequestText,
     setEnvironments,
     setActiveEnvironments,
     setHistory,
@@ -30,6 +31,11 @@ export function useVsCodeMessages() {
           setLoading(false);
           setError(message.payload as string);
           break;
+        case 'requestText': {
+          const payload = message.payload as { text: string };
+          setRequestText(payload?.text ?? '', message.requestId);
+          break;
+        }
 
         case 'environmentsUpdated':
           const envData = message.payload as {
@@ -64,7 +70,17 @@ export function useVsCodeMessages() {
     });
 
     return unsubscribe;
-  }, [setResponse, setLoading, setError, setEnvironments, setActiveEnvironments, setHistory, setCollections, setCurrentRequest]);
+  }, [
+    setResponse,
+    setLoading,
+    setError,
+    setRequestText,
+    setEnvironments,
+    setActiveEnvironments,
+    setHistory,
+    setCollections,
+    setCurrentRequest,
+  ]);
 
   // Send request to VSCode
   const sendRequest = useCallback(
@@ -122,6 +138,15 @@ export function useVsCodeMessages() {
     [currentRequest]
   );
 
+  const getRequestText = useCallback(
+    (request?: HttpRequest) => {
+      const requestId = generateId();
+      postMessage('getRequestText', request || currentRequest, requestId);
+      return requestId;
+    },
+    [currentRequest]
+  );
+
   // Open request in editor panel
   const openInEditor = useCallback((request: HttpRequest) => {
     postMessage('openInEditor', request);
@@ -154,6 +179,7 @@ export function useVsCodeMessages() {
     createCollection,
     saveToHttpFile,
     saveRequest,
+    getRequestText,
     openInEditor,
     openHttpFile,
     openSourceLocation,

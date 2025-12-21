@@ -74,6 +74,10 @@ interface StoreActions {
   // Error
   setError: (error: string | null) => void;
 
+  // Request text preview/copy
+  setRequestText: (text: string | null, requestId?: string) => void;
+  clearRequestText: () => void;
+
   // Environments
   setEnvironments: (environments: Environment[]) => void;
   setActiveEnvironments: (names: string[]) => void;
@@ -94,6 +98,8 @@ export const useStore = create<Store>(set => ({
   currentRequest: createDefaultRequest(),
   currentResponse: null,
   isLoading: false,
+  requestText: null,
+  requestTextRequestId: undefined,
   environments: [],
   activeEnvironments: [],
   history: [],
@@ -239,6 +245,10 @@ export const useStore = create<Store>(set => ({
 
   // Error
   setError: error => set({ error }),
+
+  // Request text preview/copy
+  setRequestText: (text, requestId) => set({ requestText: text, requestTextRequestId: requestId }),
+  clearRequestText: () => set({ requestText: null, requestTextRequestId: undefined }),
 
   // Environments
   setEnvironments: environments => set({ environments }),

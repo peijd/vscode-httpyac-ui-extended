@@ -4,7 +4,15 @@ import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
 import { getEnvironmentConfig } from '../config';
 import { StoreController } from '../provider/storeController';
-import type { Message, HttpRequest, HttpResponse, CollectionItem, HistoryItem, KeyValue, TestResult } from './messageTypes';
+import type {
+  Message,
+  HttpRequest,
+  HttpResponse,
+  CollectionItem,
+  HistoryItem,
+  KeyValue,
+  TestResult,
+} from './messageTypes';
 import {
   computeHttpRegionSourceHash,
   computeRequestSourceHash,
@@ -82,6 +90,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'saveRequest':
         await this.handleSaveRequest(message.payload as HttpRequest, webview);
         break;
+      case 'getRequestText':
+        await this.handleGetRequestText(message.payload as HttpRequest, webview, message.requestId);
+        break;
       case 'openInEditor':
         await this.handleOpenInEditor(message.payload as HttpRequest);
         break;
@@ -89,9 +100,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
         await this.handleOpenHttpFile(message.payload as string);
         break;
       case 'openSourceLocation':
-        await this.handleOpenSourceLocation(
-          message.payload as { filePath: string; line?: number; endLine?: number }
-        );
+        await this.handleOpenSourceLocation(message.payload as { filePath: string; line?: number; endLine?: number });
         break;
       case 'attachToHttpFile':
         await this.handleAttachToHttpFile(message.payload as HttpRequest, webview);
@@ -105,6 +114,30 @@ export class WebviewMessageHandler implements vscode.Disposable {
         break;
       default:
         console.log('Unhandled message type:', message.type);
+    }
+  }
+
+  private async handleGetRequestText(request: HttpRequest, webview: vscode.Webview, requestId?: string): Promise<void> {
+    try {
+      const content = convertRequestToHttpContent(request);
+      this.postMessage(
+        {
+          type: 'requestText',
+          payload: { text: content },
+          requestId,
+        },
+        webview
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.postMessage(
+        {
+          type: 'requestError',
+          payload: message,
+          requestId,
+        },
+        webview
+      );
     }
   }
 
@@ -210,11 +243,11 @@ export class WebviewMessageHandler implements vscode.Disposable {
       if (uri) {
         await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
         await vscode.window.showTextDocument(uri);
-        vscode.window.showInformationMessage('Request saved to ' + uri.fsPath);
+        vscode.window.showInformationMessage(`Request saved to ${uri.fsPath}`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage('Failed to save request: ' + message);
+      vscode.window.showErrorMessage(`Failed to save request: ${message}`);
     }
   }
 
@@ -276,7 +309,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage('保存请求失败: ' + message);
+      vscode.window.showErrorMessage(`保存请求失败: ${message}`);
     }
   }
 
@@ -301,10 +334,10 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const template = ['### New Request', 'GET https://example.com', ''].join('\n');
       await vscode.workspace.fs.writeFile(uri, Buffer.from(template, 'utf-8'));
       await vscode.window.showTextDocument(uri, { preview: false });
-      vscode.window.showInformationMessage('Collection created: ' + uri.fsPath);
+      vscode.window.showInformationMessage(`Collection created: ${uri.fsPath}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage('Failed to create collection: ' + message);
+      vscode.window.showErrorMessage(`Failed to create collection: ${message}`);
     }
   }
 
@@ -314,27 +347,28 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const httpFile = await this.documentStore.getWithUri(uri);
       const requests = httpFile.httpRegions
         .filter(region => !region.isGlobal() && region.request)
-        .map(region => {
+        .flatMap(region => {
           const request = convertHttpRegionToRequest(region);
           if (!request) {
-            return undefined;
+            return [];
           }
           const sourceHash = computeHttpRegionSourceHash(region);
-          return {
-            region,
-            request: {
-              ...request,
-              source: {
-                filePath: uri.fsPath,
-                regionSymbolName: region.symbol.name,
-                regionStartLine: region.symbol.startLine,
-                regionEndLine: region.symbol.endLine,
-                sourceHash,
+          return [
+            {
+              region,
+              request: {
+                ...request,
+                source: {
+                  filePath: uri.fsPath,
+                  regionSymbolName: region.symbol.name,
+                  regionStartLine: region.symbol.startLine,
+                  regionEndLine: region.symbol.endLine,
+                  sourceHash,
+                },
               },
             },
-          };
-        })
-        .filter((obj): obj is { region: httpyac.HttpRegion; request: HttpRequest } => !!obj?.request);
+          ];
+        });
 
       if (requests.length === 1) {
         await this.handleOpenInEditor(requests[0].request as HttpRequest);
@@ -375,7 +409,10 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const endLine = Math.max(payload.endLine ?? line, line);
       const selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(endLine, 0));
       const editor = await vscode.window.showTextDocument(document, { preview: false, selection });
-      editor.revealRange(new vscode.Range(selection.start, selection.end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      editor.revealRange(
+        new vscode.Range(selection.start, selection.end),
+        vscode.TextEditorRevealType.InCenterIfOutsideViewport
+      );
     } catch (error) {
       console.error('Error opening source location:', error);
     }
@@ -451,7 +488,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage('关联请求失败: ' + message);
+      vscode.window.showErrorMessage(`关联请求失败: ${message}`);
     }
   }
 
@@ -576,7 +613,11 @@ export class WebviewMessageHandler implements vscode.Disposable {
     };
   }
 
-  private toHttpRequestFromResponse(response: httpyac.HttpResponse, fallbackId: string, fallbackName?: string): HttpRequest {
+  private toHttpRequestFromResponse(
+    response: httpyac.HttpResponse,
+    fallbackId: string,
+    fallbackName?: string
+  ): HttpRequest {
     const request = response.request;
     const method = (request?.method?.toUpperCase() || 'GET') as HttpRequest['method'];
     const url = (typeof request?.url === 'string' && request?.url) || '';
@@ -629,6 +670,15 @@ export class WebviewMessageHandler implements vscode.Disposable {
       return 'none';
     }
     const contentType = headers.find(h => h.key.toLowerCase() === 'content-type')?.value || '';
+    if (contentType.includes('application/graphql')) {
+      return 'graphql';
+    }
+    if (contentType.includes('application/x-ndjson') || contentType.includes('application/ndjson')) {
+      return 'ndjson';
+    }
+    if (contentType.includes('application/xml') || contentType.includes('text/xml') || contentType.includes('+xml')) {
+      return 'xml';
+    }
     if (contentType.includes('application/json')) {
       return 'json';
     }
@@ -654,7 +704,11 @@ export class WebviewMessageHandler implements vscode.Disposable {
     return '';
   }
 
-  private toHttpResponse(response: httpyac.HttpResponse, testResults?: Array<httpyac.TestResult>, startTime?: number): HttpResponse {
+  private toHttpResponse(
+    response: httpyac.HttpResponse,
+    testResults?: Array<httpyac.TestResult>,
+    startTime?: number
+  ): HttpResponse {
     const durationMeta = response.meta?.duration;
     const duration = typeof durationMeta === 'number' ? durationMeta : 0;
     return {
@@ -873,7 +927,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
   private buildUpdatedRegionContent(region: httpyac.HttpRegion, request: HttpRequest): string {
     const originalSource = region.symbol.source || '';
     const lines = originalSource.split(/\r?\n/u);
-    const requestLineIndex = lines.findIndex(line => /^\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)\s+/iu.test(line));
+    const requestLineIndex = lines.findIndex(line =>
+      /^\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)\s+/iu.test(line)
+    );
 
     if (requestLineIndex === -1) {
       return convertRequestToHttpContent(request);
@@ -935,13 +991,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       ...filteredPrefix.slice(insertIndex),
     ];
 
-    const preScriptLines = request.preRequestScript
-      ? ['> {%', ...request.preRequestScript.split(/\r?\n/u), '%}']
-      : [];
+    const preScriptLines = request.preRequestScript ? ['> {%', ...request.preRequestScript.split(/\r?\n/u), '%}'] : [];
 
-    const testScriptLines = request.testScript
-      ? ['> {%', ...request.testScript.split(/\r?\n/u), '%}']
-      : [];
+    const testScriptLines = request.testScript ? ['> {%', ...request.testScript.split(/\r?\n/u), '%}'] : [];
 
     const requestLines = httpyac.utils.toHttpStringRequest(
       {
@@ -950,9 +1002,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           let url = request.url || '';
           const params = request.params.filter(p => p.enabled && p.key);
           if (params.length > 0) {
-            const query = params
-              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
-              .join('&');
+            const query = params.map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&');
             url += (url.includes('?') ? '&' : '?') + query;
           }
           return url;
@@ -971,9 +1021,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
             addHeader(header.key, header.value);
           }
           if (request.auth.type === 'basic' && request.auth.basic) {
-            const credentials = Buffer.from(
-              `${request.auth.basic.username}:${request.auth.basic.password}`
-            ).toString('base64');
+            const credentials = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString(
+              'base64'
+            );
             addHeader('Authorization', `Basic ${credentials}`);
           } else if (request.auth.type === 'bearer' && request.auth.bearer) {
             addHeader('Authorization', `Bearer ${request.auth.bearer.token}`);
@@ -994,12 +1044,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       { body: request.body.type !== 'none' }
     );
 
-    return [
-      ...prefixWithMeta,
-      ...preScriptLines,
-      ...requestLines,
-      ...testScriptLines,
-    ].join('\n');
+    return [...prefixWithMeta, ...preScriptLines, ...requestLines, ...testScriptLines].join('\n');
   }
 
   private replaceRegionInFile(fileText: string, region: httpyac.HttpRegion, updatedRegion: string): string {

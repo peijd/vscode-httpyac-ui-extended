@@ -67,7 +67,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
       <AccordionItem value={item.id} className="border-none">
         <AccordionTrigger
           className={cn(
-            'py-1 px-2 rounded-md transition-colors hover:bg-vscode-list-hover',
+            'py-1.5 px-2 rounded-md transition-colors hover:bg-vscode-list-hover ui-hover',
             'data-[state=open]:bg-[var(--vscode-list-inactiveSelectionBackground)]'
           )}
           style={{ paddingLeft: `${level * 12 + 8}px` }}
@@ -76,7 +76,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
             <Folder className="h-4 w-4 text-[var(--vscode-symbolIcon-folderForeground)]" />
             <span className="text-sm truncate">{highlightText(item.name, filterText)}</span>
           </div>
-          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--vscode-input-border)] text-[var(--vscode-descriptionForeground)]">
+          <span className="ml-2 ui-chip">
             {requestCount}
           </span>
         </AccordionTrigger>
@@ -103,7 +103,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 py-1 px-2 rounded-md cursor-pointer',
+        'group flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer ui-hover',
         'border border-transparent transition-colors hover:bg-vscode-list-hover hover:border-[var(--vscode-sideBar-border)]',
         isActive &&
           'bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)] border-[var(--vscode-list-activeSelectionBackground)]'
@@ -124,7 +124,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
       <Button
         variant="ghost"
         size="icon"
-        className="h-5 w-5 opacity-0 group-hover:opacity-100"
+        className="h-5 w-5 opacity-0 group-hover:opacity-100 ui-hover"
         onClick={(e) => {
           e.stopPropagation();
           onOpenInEditor(item);
