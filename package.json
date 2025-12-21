@@ -1,19 +1,18 @@
 {
-  "name": "vscode-httpyac",
-  "displayName": "httpYac - Rest Client",
+  "name": "vscode-httpyac-ui-extended",
+  "displayName": "httpYac UI Extended",
   "license": "MIT",
-  "publisher": "anweber",
-  "description": "Quickly and easily send REST, Soap, GraphQL, GRPC, MQTT, RabbitMQ and WebSocket requests directly within Visual Studio Code",
-  "version": "6.16.7",
-  "homepage": "https://github.com/AnWeber/vscode-httpyac",
+  "publisher": "peijd",
+  "description": "httpyac 二次开发的 UI 扩展版，直接在 VS Code 中发送 HTTP/GraphQL/gRPC/WebSocket 等请求",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AnWeber/vscode-httpyac"
+    "url": "https://github.com/peijd/vscode-httpyac-ui-extended"
   },
   "bugs": {
-    "url": "https://github.com/AnWeber/vscode-httpyac/issues"
+    "url": "https://github.com/peijd/vscode-httpyac-ui-extended/issues"
   },
-  "qna": "https://github.com/AnWeber/vscode-httpyac/discussions",
+  "qna": "https://github.com/peijd/vscode-httpyac-ui-extended/discussions",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.91.0"
