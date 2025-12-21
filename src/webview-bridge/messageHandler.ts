@@ -5,7 +5,13 @@ import { ResponseStore } from '../responseStore';
 import { getEnvironmentConfig } from '../config';
 import { StoreController } from '../provider/storeController';
 import type { Message, HttpRequest, HttpResponse, CollectionItem, HistoryItem, KeyValue, TestResult } from './messageTypes';
-import { convertHttpRegionToRequest, convertRequestToHttpContent, getHttpRegionDisplayName } from './httpFileConverter';
+import {
+  computeHttpRegionSourceHash,
+  computeRequestSourceHash,
+  convertHttpRegionToRequest,
+  convertRequestToHttpContent,
+  getHttpRegionDisplayName,
+} from './httpFileConverter';
 import { toUri } from '../io';
 import { ResponseItem } from '../view';
 
@@ -74,13 +80,21 @@ export class WebviewMessageHandler implements vscode.Disposable {
         await this.handleSaveToHttpFile(message.payload as HttpRequest);
         break;
       case 'saveRequest':
-        await this.handleSaveRequest(message.payload as HttpRequest);
+        await this.handleSaveRequest(message.payload as HttpRequest, webview);
         break;
       case 'openInEditor':
         await this.handleOpenInEditor(message.payload as HttpRequest);
         break;
       case 'openHttpFile':
         await this.handleOpenHttpFile(message.payload as string);
+        break;
+      case 'openSourceLocation':
+        await this.handleOpenSourceLocation(
+          message.payload as { filePath: string; line?: number; endLine?: number }
+        );
+        break;
+      case 'attachToHttpFile':
+        await this.handleAttachToHttpFile(message.payload as HttpRequest, webview);
         break;
       case 'ready':
         await Promise.all([
@@ -204,7 +218,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
-  private async handleSaveRequest(request: HttpRequest): Promise<void> {
+  private async handleSaveRequest(request: HttpRequest, webview?: vscode.Webview): Promise<void> {
     if (!request?.source?.filePath) {
       await this.handleSaveToHttpFile(request);
       return;
@@ -222,11 +236,44 @@ export class WebviewMessageHandler implements vscode.Disposable {
         return;
       }
 
+      const regionHash = computeHttpRegionSourceHash(targetRegion);
+      if (request.source?.sourceHash && regionHash && request.source.sourceHash !== regionHash) {
+        const pick = await vscode.window.showWarningMessage(
+          '检测到 .http 文件可能已被外部修改，是否继续覆盖保存？',
+          { modal: true },
+          '覆盖保存',
+          '取消'
+        );
+        if (pick !== '覆盖保存') {
+          return;
+        }
+      }
+
       const updatedRegion = this.buildUpdatedRegionContent(targetRegion, request);
       const updatedFile = this.replaceRegionInFile(fileText, targetRegion, updatedRegion);
 
       await vscode.workspace.fs.writeFile(uri, Buffer.from(updatedFile, 'utf-8'));
-      vscode.window.showInformationMessage('请求已保存到 .http 文件');
+      const choice = await vscode.window.showInformationMessage('请求已保存到 .http 文件', '撤销');
+      if (choice === '撤销') {
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(fileText, 'utf-8'));
+        return;
+      }
+      if (webview) {
+        const sourceHash = computeRequestSourceHash(request);
+        this.postMessage(
+          {
+            type: 'setRequest',
+            payload: {
+              ...request,
+              source: {
+                ...request.source,
+                sourceHash,
+              },
+            },
+          },
+          webview
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       vscode.window.showErrorMessage('保存请求失败: ' + message);
@@ -272,6 +319,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           if (!request) {
             return undefined;
           }
+          const sourceHash = computeHttpRegionSourceHash(region);
           return {
             region,
             request: {
@@ -281,6 +329,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
                 regionSymbolName: region.symbol.name,
                 regionStartLine: region.symbol.startLine,
                 regionEndLine: region.symbol.endLine,
+                sourceHash,
               },
             },
           };
@@ -308,6 +357,101 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
     } catch (error) {
       console.error('Error opening HTTP file:', error);
+    }
+  }
+
+  private async handleOpenSourceLocation(payload: {
+    filePath: string;
+    line?: number;
+    endLine?: number;
+  }): Promise<void> {
+    try {
+      if (!payload?.filePath) {
+        return;
+      }
+      const uri = vscode.Uri.file(payload.filePath);
+      const document = await vscode.workspace.openTextDocument(uri);
+      const line = Math.max(payload.line ?? 0, 0);
+      const endLine = Math.max(payload.endLine ?? line, line);
+      const selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(endLine, 0));
+      const editor = await vscode.window.showTextDocument(document, { preview: false, selection });
+      editor.revealRange(new vscode.Range(selection.start, selection.end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    } catch (error) {
+      console.error('Error opening source location:', error);
+    }
+  }
+
+  private async handleAttachToHttpFile(request: HttpRequest, webview?: vscode.Webview): Promise<void> {
+    try {
+      const uri = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: {
+          'HTTP Files': ['http', 'rest'],
+        },
+      });
+
+      if (!uri || uri.length === 0) {
+        return;
+      }
+
+      const targetUri = uri[0];
+      const fileBuffer = await vscode.workspace.fs.readFile(targetUri);
+      const fileText = Buffer.from(fileBuffer).toString('utf-8');
+      const eol = fileText.includes('\r\n') ? '\r\n' : '\n';
+
+      let updatedFile = fileText;
+      const hasContent = fileText.trim().length > 0;
+      if (hasContent && !updatedFile.endsWith('\n')) {
+        updatedFile += eol;
+      }
+      if (hasContent) {
+        updatedFile += eol;
+      }
+
+      const headerName = request.name && request.name !== 'New Request' ? `### ${request.name}` : '###';
+      const requestContent = convertRequestToHttpContent(request);
+      updatedFile += `${headerName}${eol}${requestContent}${eol}`;
+
+      await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedFile, 'utf-8'));
+
+      const httpFile = await this.documentStore.getWithUri(targetUri);
+      const requestHash = computeRequestSourceHash(request);
+      const targetRegion = httpFile.httpRegions.find(
+        region => !region.isGlobal() && region.request && computeHttpRegionSourceHash(region) === requestHash
+      );
+
+      let linked = false;
+      if (targetRegion && webview) {
+        const sourceHash = computeHttpRegionSourceHash(targetRegion);
+        this.postMessage(
+          {
+            type: 'setRequest',
+            payload: {
+              ...request,
+              source: {
+                filePath: targetUri.fsPath,
+                regionSymbolName: targetRegion.symbol.name,
+                regionStartLine: targetRegion.symbol.startLine,
+                regionEndLine: targetRegion.symbol.endLine,
+                sourceHash,
+              },
+            },
+          },
+          webview
+        );
+        linked = true;
+      }
+
+      if (linked) {
+        vscode.window.showInformationMessage(`请求已关联到 ${targetUri.fsPath}`);
+      } else {
+        vscode.window.showWarningMessage(`请求已追加到 ${targetUri.fsPath}，但未能定位区域，请手动检查。`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      vscode.window.showErrorMessage('关联请求失败: ' + message);
     }
   }
 
@@ -669,6 +813,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       return undefined;
     }
     const displayName = getHttpRegionDisplayName(region);
+    const sourceHash = computeHttpRegionSourceHash(region);
     return {
       id,
       name: displayName || request.name || region.symbol.name || request.url,
@@ -681,6 +826,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           regionSymbolName: region.symbol.name,
           regionStartLine: region.symbol.startLine,
           regionEndLine: region.symbol.endLine,
+          sourceHash,
         },
       },
       httpFilePath: uri.fsPath,
@@ -690,6 +836,13 @@ export class WebviewMessageHandler implements vscode.Disposable {
   private findRegionForRequest(httpFile: httpyac.HttpFile, request: HttpRequest): httpyac.HttpRegion | undefined {
     const candidates = httpFile.httpRegions.filter(region => !region.isGlobal() && region.request);
     const source = request.source;
+
+    if (source?.sourceHash) {
+      const byHash = candidates.find(region => computeHttpRegionSourceHash(region) === source.sourceHash);
+      if (byHash) {
+        return byHash;
+      }
+    }
 
     if (source?.regionSymbolName) {
       const bySymbol = candidates.find(

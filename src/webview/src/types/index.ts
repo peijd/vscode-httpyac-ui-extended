@@ -47,6 +47,7 @@ export interface RequestSource {
   regionSymbolName?: string;
   regionStartLine?: number;
   regionEndLine?: number;
+  sourceHash?: string;
 }
 
 // Complete HTTP Request
@@ -138,6 +139,8 @@ export type MessageType =
   | 'saveRequest'
   | 'openInEditor'
   | 'openHttpFile'
+  | 'openSourceLocation'
+  | 'attachToHttpFile'
   | 'setRequest'
   | 'showNotification'
   | 'ready';

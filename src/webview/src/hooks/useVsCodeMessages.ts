@@ -132,6 +132,14 @@ export function useVsCodeMessages() {
     postMessage('openHttpFile', filePath);
   }, []);
 
+  const openSourceLocation = useCallback((filePath: string, line?: number, endLine?: number) => {
+    postMessage('openSourceLocation', { filePath, line, endLine });
+  }, []);
+
+  const attachToHttpFile = useCallback((request: HttpRequest) => {
+    postMessage('attachToHttpFile', request);
+  }, []);
+
   // Notify VSCode that webview is ready
   const notifyReady = useCallback(() => {
     postMessage('ready');
@@ -148,6 +156,8 @@ export function useVsCodeMessages() {
     saveRequest,
     openInEditor,
     openHttpFile,
+    openSourceLocation,
+    attachToHttpFile,
     notifyReady,
   };
 }

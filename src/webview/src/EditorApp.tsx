@@ -38,8 +38,18 @@ export const EditorApp: React.FC = () => {
     setTestScript,
   } = useStore();
 
-  const { sendRequest, saveRequest, saveToHttpFile, notifyReady } = useVsCodeMessages();
+  const { sendRequest, saveRequest, saveToHttpFile, notifyReady, openSourceLocation, attachToHttpFile } = useVsCodeMessages();
   const [splitRatio, setSplitRatio] = useState(50); // percentage for request panel
+  const source = currentRequest.source;
+  const sourceFileName = source?.filePath ? source.filePath.split(/[/\\\\]/u).pop() || source.filePath : '';
+  const hasEndLine =
+    source?.regionEndLine !== undefined &&
+    source?.regionStartLine !== undefined &&
+    source.regionEndLine !== source.regionStartLine;
+  const sourceLine =
+    source?.regionStartLine !== undefined
+      ? `L${source.regionStartLine + 1}${hasEndLine ? `-${source.regionEndLine! + 1}` : ''}`
+      : '';
 
   // Initialize on mount and load initial request if present
   useEffect(() => {
@@ -120,15 +130,48 @@ export const EditorApp: React.FC = () => {
 
       {/* Source info */}
       <div className="px-4 py-2 border-b border-[var(--vscode-panel-border)] text-xs text-[var(--vscode-descriptionForeground)] flex items-center justify-between gap-4">
-        <div className="truncate">
-          {currentRequest.source?.filePath ? (
-            <span>
-              关联文件：{currentRequest.source.filePath}
+        {source?.filePath ? (
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="truncate" title={source.filePath}>
+              文件：{sourceFileName}
             </span>
-          ) : (
-            <span>未关联 .http 文件（保存后创建）</span>
-          )}
-        </div>
+            {sourceLine ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--vscode-panel-border)]">
+                {sourceLine}
+              </span>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => openSourceLocation(source.filePath!, source.regionStartLine, source.regionEndLine)}
+            >
+              跳转源文件
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-[var(--vscode-panel-border)]">
+              临时请求
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => saveToHttpFile()}
+            >
+              保存为新文件
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => attachToHttpFile(currentRequest)}
+            >
+              关联到已有 .http
+            </Button>
+          </div>
+        )}
         <div className="truncate">
           请求标识：{currentRequest.name || `${currentRequest.method} ${currentRequest.url}`}
         </div>

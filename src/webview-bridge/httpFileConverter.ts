@@ -1,8 +1,10 @@
 import * as httpyac from 'httpyac';
+import { createHash } from 'crypto';
 import type { HttpRequest, KeyValue, AuthConfig, RequestBody, HttpMethod } from './messageTypes';
 import { v4 as uuidv4 } from 'uuid';
 
 const REQUEST_LINE_REGEX = /^\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)\s+\S+/i;
+const BODY_HASH_SNIPPET = 160;
 
 function isScriptStartLine(line: string): boolean {
   return line.trim() === '> {%';
@@ -121,6 +123,93 @@ function buildHttpyacRequest(request: HttpRequest): httpyac.Request {
     headers: buildHeaders(request),
     body: buildBodyContent(request.body),
   };
+}
+
+function summarizeBody(body: string): string {
+  const normalized = body.replace(/\r\n/gu, '\n').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= BODY_HASH_SNIPPET * 2) {
+    return `len=${normalized.length}\n${normalized}`;
+  }
+  const head = normalized.slice(0, BODY_HASH_SNIPPET);
+  const tail = normalized.slice(-BODY_HASH_SNIPPET);
+  return `len=${normalized.length}\n${head}\n...\n${tail}`;
+}
+
+function hashText(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function formatHeadersForHash(headers: Record<string, unknown> | undefined): string {
+  if (!headers) {
+    return '';
+  }
+  const normalized = new Map<string, string[]>();
+  for (const [key, value] of Object.entries(headers)) {
+    const name = key.trim().toLowerCase();
+    if (!name) {
+      continue;
+    }
+    const values = Array.isArray(value)
+      ? value.map(item => String(item).trim())
+      : value === undefined || value === null
+        ? []
+        : [String(value).trim()];
+    const existing = normalized.get(name) || [];
+    normalized.set(name, [...existing, ...values].filter(Boolean));
+  }
+  return Array.from(normalized.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, values]) => `${key}:${values.sort().join(',')}`)
+    .join('\n');
+}
+
+function getRequestBodyAsString(body: unknown): string {
+  if (typeof body === 'string') {
+    return body;
+  }
+  if (body instanceof Buffer) {
+    return body.toString('utf-8');
+  }
+  if (body && typeof body === 'object') {
+    return JSON.stringify(body, null, 2);
+  }
+  if (body !== undefined && body !== null) {
+    return String(body);
+  }
+  return '';
+}
+
+export function computeRequestSourceHash(request: HttpRequest): string {
+  const url = buildUrlWithParams(request);
+  const headers = buildHeaders(request);
+  const body = buildBodyContent(request.body) || '';
+  const payload = [
+    `${request.method.toUpperCase()} ${url}`,
+    formatHeadersForHash(headers),
+    summarizeBody(body),
+  ].join('\n');
+  return hashText(payload);
+}
+
+export function computeHttpRegionSourceHash(httpRegion: httpyac.HttpRegion): string | undefined {
+  if (!httpRegion.request) {
+    return undefined;
+  }
+  const method = httpRegion.request.method?.toUpperCase() || 'GET';
+  const url = typeof httpRegion.request.url === 'string'
+    ? httpRegion.request.url
+    : String(httpRegion.request.url || '');
+  const headers = httpRegion.request.headers || undefined;
+  const body = getRequestBodyAsString(httpRegion.request.body);
+  const payload = [
+    `${method} ${url}`,
+    formatHeadersForHash(headers),
+    summarizeBody(body),
+  ].join('\n');
+  return hashText(payload);
 }
 
 function findRequestLineIndex(lines: string[]): number {
