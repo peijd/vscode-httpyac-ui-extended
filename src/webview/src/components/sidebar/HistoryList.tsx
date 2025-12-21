@@ -4,6 +4,7 @@ import { MethodBadge } from '@/components/request';
 import { StatusBadge } from '@/components/response';
 import { Trash2, ExternalLink } from 'lucide-react';
 import { useStore, useVsCodeMessages } from '@/hooks';
+import { formatBytes, formatTime } from '@/lib/utils';
 
 export const HistoryList: React.FC = () => {
   const { history, clearHistory, setCurrentRequest, setResponse } = useStore();
@@ -67,13 +68,23 @@ export const HistoryList: React.FC = () => {
                   <span className="text-xs text-[var(--vscode-descriptionForeground)]">
                     {formatTimestamp(item.timestamp)}
                   </span>
-                  {item.response && (
-                    <StatusBadge
-                      status={item.response.status}
-                      statusText=""
-                      className="text-xs"
-                    />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {item.response && (
+                      <>
+                        <StatusBadge
+                          status={item.response.status}
+                          statusText=""
+                          className="text-xs"
+                        />
+                        <span className="ui-chip text-[10px]">
+                          {formatTime(item.response.time)}
+                        </span>
+                        <span className="ui-chip text-[10px]">
+                          {formatBytes(item.response.size)}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <Button
                   variant="ghost"

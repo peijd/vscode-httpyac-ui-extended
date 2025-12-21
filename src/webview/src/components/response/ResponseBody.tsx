@@ -5,19 +5,21 @@ import { CodeEditor } from '@/components/common/CodeEditor';
 interface ResponseBodyProps {
   body: string;
   contentType: string;
-  viewMode?: 'pretty' | 'raw' | 'preview' | 'tree';
+  viewMode?: 'structured' | 'raw' | 'preview' | 'pretty' | 'tree';
 }
 
-export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, viewMode = 'pretty' }) => {
+export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, viewMode = 'structured' }) => {
+  const normalizedView: 'structured' | 'raw' | 'preview' =
+    viewMode === 'pretty' || viewMode === 'tree' ? 'structured' : viewMode;
   const formattedBody = useMemo(() => {
-    if (viewMode === 'raw') {
+    if (normalizedView === 'raw') {
       return body;
     }
     if (isJsonContentType(contentType)) {
       return formatJson(body);
     }
     return body;
-  }, [body, contentType, viewMode]);
+  }, [body, contentType, normalizedView]);
 
   const parsedJson = useMemo(() => {
     if (!isJsonContentType(contentType)) {
@@ -38,7 +40,7 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
   const isHtml = isHtmlContentType(contentType);
 
   // Preview mode for HTML
-  if (viewMode === 'preview' && isHtml) {
+  if (normalizedView === 'preview' && isHtml) {
     return (
       <iframe
         srcDoc={body}
@@ -49,11 +51,11 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
     );
   }
 
-  if (viewMode === 'pretty' && isJson) {
+  if (normalizedView === 'structured' && isJson) {
     if (parsedJson === null) {
       return (
         <div className="p-4 text-[var(--vscode-descriptionForeground)] text-sm">
-          JSON 解析失败，无法折叠展示。
+          Failed to parse JSON. Structured view is unavailable.
         </div>
       );
     }
@@ -64,10 +66,9 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
     );
   }
 
-  // Code or Raw mode
-  return (
-    <div className="p-4">
-      {viewMode === 'tree' ? (
+  if (normalizedView === 'structured') {
+    return (
+      <div className="p-4">
         <CodeEditor
           value={formattedBody}
           language={isJson ? 'json' : 'text'}
@@ -75,11 +76,16 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
           minHeight={240}
           maxHeight={520}
         />
-      ) : (
-        <pre className="font-mono text-sm whitespace-pre overflow-x-auto">
-          <code>{formattedBody}</code>
-        </pre>
-      )}
+      </div>
+    );
+  }
+
+  // Raw mode
+  return (
+    <div className="p-4">
+      <pre className="font-mono text-sm whitespace-pre overflow-x-auto">
+        <code>{formattedBody}</code>
+      </pre>
     </div>
   );
 };

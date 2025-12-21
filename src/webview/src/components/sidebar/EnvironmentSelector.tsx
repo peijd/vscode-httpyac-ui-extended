@@ -43,7 +43,7 @@ export const EnvironmentSelector: React.FC = () => {
         </SelectContent>
       </Select>
       <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
-        <span className="ui-chip">变量 {activeVarCount}</span>
+        <span className="ui-chip">Vars {activeVarCount}</span>
       </div>
     </div>
   );

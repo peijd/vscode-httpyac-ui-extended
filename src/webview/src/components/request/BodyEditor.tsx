@@ -3,7 +3,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from '@/components/u
 import { KeyValueEditor } from './KeyValueEditor';
 import type { RequestBody, KeyValue, BodyType } from '@/types';
 import { useStore, createKeyValue } from '@/hooks';
-import { formatJson, tryParseJson } from '@/lib/utils';
+import {
+  estimateBytes,
+  formatBytes,
+  formatGraphql,
+  formatJson,
+  formatPlainText,
+  minifyGraphql,
+  minifyJson,
+  minifyWhitespace,
+  sortJsonKeys,
+  sortLines,
+  tryParseJson,
+} from '@/lib/utils';
 import { CodeEditor } from '@/components/common/CodeEditor';
 
 interface BodyEditorProps {
@@ -43,6 +55,28 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
     }
   };
 
+  const ensureHeader = (key: string, value: string) => {
+    const { currentRequest, updateHeader, addHeader } = useStore.getState();
+    const existingHeader = currentRequest.headers.find(
+      (h) => h.key.toLowerCase() === key.toLowerCase()
+    );
+    if (existingHeader) {
+      if (!existingHeader.value) {
+        updateHeader(existingHeader.id, { value });
+      }
+      return;
+    }
+    if (!value) {
+      return;
+    }
+    addHeader();
+    const state = useStore.getState();
+    const newHeader = state.currentRequest.headers[state.currentRequest.headers.length - 1];
+    if (newHeader) {
+      updateHeader(newHeader.id, { key, value });
+    }
+  };
+
   const formattedJson = useMemo(() => formatJson(body.content || ''), [body.content]);
   const jsonValid = useMemo(() => tryParseJson(body.content || '') !== null, [body.content]);
   const rawJson = body.content || '';
@@ -75,8 +109,57 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
     }
   }, [rawJson]);
 
+  const bodySize = useMemo(() => {
+    switch (body.type) {
+      case 'form':
+      case 'formdata': {
+        const content = (body.formData || [])
+          .filter(item => item.enabled && item.key)
+          .map(item => `${item.key}=${item.value}`)
+          .join('&');
+        return estimateBytes(content);
+      }
+      case 'binary':
+        return 0;
+      default:
+        return estimateBytes(body.content || '');
+    }
+  }, [body]);
+
   const handleFormat = () => {
     onChange({ ...body, content: formattedJson });
+  };
+
+  const handleMinifyJson = () => {
+    onChange({ ...body, content: minifyJson(body.content || '') });
+  };
+
+  const handleSortJson = () => {
+    onChange({ ...body, content: sortJsonKeys(body.content || '') });
+  };
+
+  const handleFormatGraphql = () => {
+    onChange({ ...body, content: formatGraphql(body.content || '') });
+  };
+
+  const handleMinifyGraphql = () => {
+    onChange({ ...body, content: minifyGraphql(body.content || '') });
+  };
+
+  const handleSortGraphql = () => {
+    onChange({ ...body, content: sortLines(body.content || '') });
+  };
+
+  const handleFormatRaw = () => {
+    onChange({ ...body, content: formatPlainText(body.content || '') });
+  };
+
+  const handleMinifyRaw = () => {
+    onChange({ ...body, content: minifyWhitespace(body.content || '') });
+  };
+
+  const handleSortRaw = () => {
+    onChange({ ...body, content: sortLines(body.content || '') });
   };
 
   const handleTypeChange = (type: BodyType) => {
@@ -86,24 +169,34 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
     switch (type) {
       case 'json':
         updateHeaders('application/json');
+        ensureHeader('Accept', 'application/json');
         break;
       case 'form':
         updateHeaders('application/x-www-form-urlencoded');
+        ensureHeader('Accept', '*/*');
         break;
       case 'formdata':
         updateHeaders('multipart/form-data');
+        ensureHeader('Accept', '*/*');
         break;
       case 'graphql':
         updateHeaders('application/graphql');
+        ensureHeader('Accept', 'application/graphql');
         break;
       case 'ndjson':
         updateHeaders('application/x-ndjson');
+        ensureHeader('Accept', 'application/x-ndjson');
         break;
       case 'xml':
         updateHeaders('application/xml');
+        ensureHeader('Accept', 'application/xml');
         break;
       case 'binary':
         updateHeaders('application/octet-stream');
+        ensureHeader('Accept', '*/*');
+        break;
+      case 'raw':
+        ensureHeader('Accept', '*/*');
         break;
       default:
         break;
@@ -148,19 +241,40 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[var(--vscode-descriptionForeground)]">
-                JSON 高亮编辑
+                JSON editor
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                  onClick={handleFormat}
-                  >
-                    格式化
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleFormat}
+                    >
+                      Format
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleMinifyJson}
+                    >
+                      Minify
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleSortJson}
+                    >
+                      Sort
+                    </Button>
+                  </div>
                   <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
-                    {jsonValid ? 'JSON 可解析' : 'JSON 无效'}
+                    Size {formatBytes(bodySize)}
+                  </span>
+                  <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                    {jsonValid ? 'Valid JSON' : 'Invalid JSON'}
                   </span>
                   <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
                     {navigator.platform.toLowerCase().includes('mac') ? '⌘⇧F' : 'Ctrl+Shift+F'}
@@ -178,7 +292,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             />
             {errorInfo ? (
               <div className="text-xs text-[var(--vscode-errorForeground)]">
-                {errorInfo.line ? `第 ${errorInfo.line} 行，第 ${errorInfo.column ?? 1} 列：` : ''}
+                {errorInfo.line ? `Line ${errorInfo.line}, Col ${errorInfo.column ?? 1}: ` : ''}
                 {errorInfo.message}
               </div>
             ) : null}
@@ -186,45 +300,129 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
         </TabsContent>
 
         <TabsContent value="form">
-          <KeyValueEditor
-            items={body.formData || []}
-            onAdd={handleFormDataAdd}
-            onUpdate={handleFormDataUpdate}
-            onRemove={handleFormDataRemove}
-            keyPlaceholder="Field name"
-            valuePlaceholder="Field value"
-          />
+          <div className="space-y-2">
+            <KeyValueEditor
+              items={body.formData || []}
+              onAdd={handleFormDataAdd}
+              onUpdate={handleFormDataUpdate}
+              onRemove={handleFormDataRemove}
+              onItemsChange={(items) => onChange({ ...body, formData: items })}
+              keyPlaceholder="Field name"
+              valuePlaceholder="Field value"
+            />
+            <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+              Size {formatBytes(bodySize)}
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="formdata">
-          <KeyValueEditor
-            items={body.formData || []}
-            onAdd={handleFormDataAdd}
-            onUpdate={handleFormDataUpdate}
-            onRemove={handleFormDataRemove}
-            keyPlaceholder="Field name"
-            valuePlaceholder="Field value"
-          />
+          <div className="space-y-2">
+            <KeyValueEditor
+              items={body.formData || []}
+              onAdd={handleFormDataAdd}
+              onUpdate={handleFormDataUpdate}
+              onRemove={handleFormDataRemove}
+              onItemsChange={(items) => onChange({ ...body, formData: items })}
+              keyPlaceholder="Field name"
+              valuePlaceholder="Field value"
+            />
+            <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+              Size {formatBytes(bodySize)}
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="raw">
-          <textarea
-            value={body.content}
-            onChange={(e) => onChange({ ...body, content: e.target.value })}
-            placeholder="Raw body content..."
-            className="code-area w-full min-h-[200px]"
-            spellCheck={false}
-          />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-[var(--vscode-descriptionForeground)]">Raw input</div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleFormatRaw}
+                  >
+                    Format
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleMinifyRaw}
+                  >
+                    Minify
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleSortRaw}
+                  >
+                    Sort
+                  </Button>
+                </div>
+                <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                  Size {formatBytes(bodySize)}
+                </span>
+              </div>
+            </div>
+            <textarea
+              value={body.content}
+              onChange={(e) => onChange({ ...body, content: e.target.value })}
+              placeholder="Raw body content..."
+              className="code-area w-full min-h-[200px]"
+              spellCheck={false}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="graphql">
-          <textarea
-            value={body.content}
-            onChange={(e) => onChange({ ...body, content: e.target.value })}
-            placeholder="query MyQuery {\n  viewer { id name }\n}\n"
-            className="code-area w-full min-h-[200px]"
-            spellCheck={false}
-          />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-[var(--vscode-descriptionForeground)]">GraphQL query</div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleFormatGraphql}
+                  >
+                    Format
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleMinifyGraphql}
+                  >
+                    Minify
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleSortGraphql}
+                  >
+                    Sort
+                  </Button>
+                </div>
+                <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                  Size {formatBytes(bodySize)}
+                </span>
+              </div>
+            </div>
+            <textarea
+              value={body.content}
+              onChange={(e) => onChange({ ...body, content: e.target.value })}
+              placeholder="query MyQuery {\n  viewer { id name }\n}\n"
+              className="code-area w-full min-h-[200px]"
+              spellCheck={false}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="ndjson">
@@ -235,6 +433,9 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             className="code-area w-full min-h-[200px]"
             spellCheck={false}
           />
+          <div className="mt-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
+            Size {formatBytes(bodySize)}
+          </div>
         </TabsContent>
 
         <TabsContent value="xml">
@@ -245,6 +446,9 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             className="code-area w-full min-h-[200px]"
             spellCheck={false}
           />
+          <div className="mt-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
+            Size {formatBytes(bodySize)}
+          </div>
         </TabsContent>
 
         <TabsContent value="binary">
@@ -252,11 +456,11 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             <input
               value={body.binaryPath || ''}
               onChange={(e) => onChange({ ...body, binaryPath: e.target.value })}
-              placeholder="输入文件路径（将以 @path 写入请求体）"
+              placeholder="Enter file path (will be serialized as @path)"
               className="w-full px-3 py-2 bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded text-sm"
             />
             <p className="text-xs text-[var(--vscode-descriptionForeground)]">
-              可用于发送二进制或文件内容；路径会被序列化为 @path。
+              Use to send binary/file content; the path will be serialized as @path.
             </p>
           </div>
         </TabsContent>

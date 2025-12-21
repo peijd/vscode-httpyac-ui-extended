@@ -120,7 +120,7 @@ export const SidebarApp: React.FC = () => {
               </div>
               {normalizedFilter ? (
                 <span className="ui-chip whitespace-nowrap">
-                  匹配 {matchedCount}
+                  Matched {matchedCount}
                 </span>
               ) : null}
             </div>

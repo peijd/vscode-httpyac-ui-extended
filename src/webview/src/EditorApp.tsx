@@ -21,7 +21,7 @@ const PRE_REQUEST_SNIPPETS = [
     content: "console.log('pre-request');",
   },
   {
-    label: 'set变量',
+    label: 'set var',
     content:
       "if (typeof client !== 'undefined' && client.global && typeof response !== 'undefined') {\n  client.global.set('token', response.body?.token);\n}",
   },
@@ -38,7 +38,7 @@ const TEST_SNIPPETS = [
       "if (typeof response !== 'undefined' && response.statusCode !== 200) {\n  throw new Error(`Expected 200, got ${response.statusCode}`);\n}",
   },
   {
-    label: 'set变量',
+    label: 'set var',
     content:
       "if (typeof client !== 'undefined' && client.global && typeof response !== 'undefined') {\n  client.global.set('token', response.body?.token);\n}",
   },
@@ -81,12 +81,14 @@ export const EditorApp: React.FC = () => {
     setPreRequestScript,
     setTestScript,
     setError,
+    activeEnvironments,
   } = useStore();
 
   const {
     sendRequest,
     saveRequest,
     saveToHttpFile,
+    appendToHttpFile,
     notifyReady,
     openSourceLocation,
     attachToHttpFile,
@@ -98,7 +100,11 @@ export const EditorApp: React.FC = () => {
   const [pendingRequestTextAction, setPendingRequestTextAction] = useState<'preview' | 'copy' | null>(null);
   const [requestTextLoading, setRequestTextLoading] = useState(false);
   const [requestCopyFeedback, setRequestCopyFeedback] = useState('');
+  const [responseCopyFeedback, setResponseCopyFeedback] = useState('');
   const [metaMode, setMetaMode] = useState<'quick' | 'advanced'>('quick');
+  const [lastSentAt, setLastSentAt] = useState<number | null>(null);
+  const [requestTab, setRequestTab] = useState<'meta' | 'params' | 'auth' | 'headers' | 'body' | 'scripts'>('params');
+  const isMac = navigator.platform.toLowerCase().includes('mac');
   const source = currentRequest.source;
   const sourceFileName = source?.filePath ? source.filePath.split(/[/\\\\]/u).pop() || source.filePath : '';
   const hasEndLine =
@@ -129,7 +135,7 @@ export const EditorApp: React.FC = () => {
     }
     if (pendingRequestTextAction === 'copy') {
       navigator.clipboard.writeText(requestText);
-      setRequestCopyFeedback('已复制请求');
+      setRequestCopyFeedback('Request copied');
       window.setTimeout(() => setRequestCopyFeedback(''), 1500);
       clearRequestText();
     } else if (pendingRequestTextAction === 'preview') {
@@ -148,6 +154,7 @@ export const EditorApp: React.FC = () => {
 
   const handleSend = () => {
     if (currentRequest.url) {
+      setLastSentAt(Date.now());
       sendRequest();
     }
   };
@@ -271,7 +278,7 @@ export const EditorApp: React.FC = () => {
       const text = await navigator.clipboard.readText();
       const pairs = mode === 'curl' ? parseCurlParams(text) : parseParamText(text);
       if (pairs.length === 0) {
-        setError('未解析到参数，请检查剪贴板内容。');
+        setError('No params parsed. Check clipboard content.');
         return;
       }
       if (mode === 'curl') {
@@ -285,7 +292,7 @@ export const EditorApp: React.FC = () => {
       });
       setError(null);
     } catch {
-      setError('读取剪贴板失败，请检查浏览器权限设置。');
+      setError('Failed to read clipboard. Check permissions.');
     }
   };
 
@@ -294,7 +301,7 @@ export const EditorApp: React.FC = () => {
       const text = await navigator.clipboard.readText();
       const pairs = mode === 'curl' ? parseCurlHeaders(text) : parseHeaderLines(text);
       if (pairs.length === 0) {
-        setError('未解析到 Headers，请检查剪贴板内容。');
+        setError('No headers parsed. Check clipboard content.');
         return;
       }
       updateRequest({
@@ -302,7 +309,7 @@ export const EditorApp: React.FC = () => {
       });
       setError(null);
     } catch {
-      setError('读取剪贴板失败，请检查浏览器权限设置。');
+      setError('Failed to read clipboard. Check permissions.');
     }
   };
 
@@ -318,6 +325,82 @@ export const EditorApp: React.FC = () => {
   const insertTestSnippet = (snippet: string) => {
     setTestScript(appendSnippet(currentRequest.testScript, snippet));
   };
+
+  const handleCopyResponse = () => {
+    if (!currentResponse) {
+      setResponseCopyFeedback('No response to copy.');
+      window.setTimeout(() => setResponseCopyFeedback(''), 1500);
+      return;
+    }
+    const headerText = Object.entries(currentResponse.headers)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
+    const content = `${headerText}\n\n${currentResponse.body || ''}`.trim();
+    navigator.clipboard.writeText(content);
+    setResponseCopyFeedback('Response copied');
+    window.setTimeout(() => setResponseCopyFeedback(''), 1500);
+  };
+
+  const formatLastSent = (timestamp: number | null) => {
+    if (!timestamp) {
+      return 'Not sent';
+    }
+    const diff = Date.now() - timestamp;
+    if (diff < 60 * 1000) {
+      return 'Just now';
+    }
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const currentTags = useMemo(() => {
+    const tagValue = getMetaValue('tag');
+    if (!tagValue) {
+      return [];
+    }
+    return tagValue.split(',').map(tag => tag.trim()).filter(Boolean);
+  }, [metaItems]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const isMac = navigator.platform.toLowerCase().includes('mac');
+      const hasMod = isMac ? event.metaKey : event.ctrlKey;
+
+      if (hasMod && event.key === 'Enter') {
+        event.preventDefault();
+        handleSend();
+        return;
+      }
+      if (hasMod && key === 's') {
+        event.preventDefault();
+        handleSave();
+        return;
+      }
+      if (hasMod && event.shiftKey && key === 'c') {
+        event.preventDefault();
+        requestPreview('copy');
+        return;
+      }
+      if (hasMod && event.shiftKey && key === 'r') {
+        event.preventDefault();
+        handleCopyResponse();
+        return;
+      }
+      if (event.altKey && !hasMod && !event.shiftKey) {
+        const tabMap: Array<typeof requestTab> = ['meta', 'params', 'auth', 'headers', 'body', 'scripts'];
+        const index = Number.parseInt(event.key, 10) - 1;
+        if (!Number.isNaN(index) && tabMap[index]) {
+          event.preventDefault();
+          setRequestTab(tabMap[index]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [handleSave, handleSend, handleCopyResponse, requestPreview]);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--vscode-editor-background)]">
@@ -339,9 +422,30 @@ export const EditorApp: React.FC = () => {
               }}
             />
           </div>
+          <div className="flex items-center gap-2 ui-card px-2 py-1.5">
+            <input
+              value={getMetaValue('name')}
+              onChange={(e) => {
+                const value = e.target.value;
+                upsertMeta('name', value, value.trim().length > 0);
+              }}
+              placeholder="Request name"
+              className="w-32 bg-transparent border border-transparent focus:border-[var(--vscode-focusBorder)] rounded px-2 py-1 text-xs text-[var(--vscode-input-foreground)] placeholder:text-[var(--vscode-input-placeholderForeground)]"
+            />
+            <input
+              value={getMetaValue('tag')}
+              onChange={(e) => {
+                const value = e.target.value;
+                upsertMeta('tag', value, value.trim().length > 0);
+              }}
+              placeholder="Tag"
+              className="w-28 bg-transparent border border-transparent focus:border-[var(--vscode-focusBorder)] rounded px-2 py-1 text-xs text-[var(--vscode-input-foreground)] placeholder:text-[var(--vscode-input-placeholderForeground)]"
+            />
+          </div>
           <Button
             onClick={handleSend}
             disabled={isLoading || !currentRequest.url}
+            title={`Send (${isMac ? '⌘↵' : 'Ctrl+Enter'})`}
             className="px-6 py-2.5 bg-[var(--vscode-button-background)] hover:bg-[var(--vscode-button-hoverBackground)] text-[var(--vscode-button-foreground)] font-medium ui-hover"
           >
             {isLoading ? 'Sending...' : 'Send'}
@@ -351,7 +455,7 @@ export const EditorApp: React.FC = () => {
               variant="ghost"
               size="icon"
               onClick={handleSave}
-              title={currentRequest.source?.filePath ? 'Save to source .http file' : 'Save to .http file'}
+              title={`${currentRequest.source?.filePath ? 'Save to source .http' : 'Save as .http'} (${isMac ? '⌘S' : 'Ctrl+S'})`}
               className="h-9 w-9 ui-hover"
             >
               <Save className="h-4 w-4" />
@@ -359,7 +463,7 @@ export const EditorApp: React.FC = () => {
             <Button
               variant="ghost"
               size="icon"
-              title="预览请求文本"
+              title="Preview request text"
               className="h-9 w-9 ui-hover"
               onClick={() => requestPreview('preview')}
             >
@@ -368,7 +472,7 @@ export const EditorApp: React.FC = () => {
             <Button
               variant="ghost"
               size="icon"
-              title="复制请求"
+              title={`Copy request (${isMac ? '⌘⇧C' : 'Ctrl+Shift+C'})`}
               className="h-9 w-9 ui-hover"
               onClick={() => requestPreview('copy')}
             >
@@ -379,7 +483,7 @@ export const EditorApp: React.FC = () => {
       </div>
 
       {/* Source info */}
-      <div className="ui-subbar px-4 py-2 text-xs text-[var(--vscode-descriptionForeground)] flex items-center justify-between gap-4">
+      <div className="ui-subbar px-4 py-2 text-xs text-[var(--vscode-descriptionForeground)] flex flex-wrap items-center justify-between gap-4">
         {source?.filePath ? (
           <div className="flex items-center gap-3 min-w-0">
             <span className="truncate ui-chip" title={source.filePath}>
@@ -394,15 +498,23 @@ export const EditorApp: React.FC = () => {
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-[10px] ui-hover"
-              onClick={() => openSourceLocation(source.filePath!, source.regionStartLine, source.regionEndLine)}
+              onClick={() =>
+                openSourceLocation(
+                  source.filePath!,
+                  source.regionStartLine,
+                  source.regionEndLine,
+                  source.sourceHash,
+                  source.regionSymbolName
+                )
+              }
             >
-              跳转源文件
+              Open source file
             </Button>
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <span className="ui-chip">
-              临时请求
+              Unsaved request
             </span>
             <Button
               variant="ghost"
@@ -410,7 +522,7 @@ export const EditorApp: React.FC = () => {
               className="h-6 px-2 text-[10px] ui-hover"
               onClick={() => saveToHttpFile()}
             >
-              保存为新文件
+              Save as new file
             </Button>
             <Button
               variant="ghost"
@@ -418,13 +530,22 @@ export const EditorApp: React.FC = () => {
               className="h-6 px-2 text-[10px] ui-hover"
               onClick={() => attachToHttpFile(currentRequest)}
             >
-              关联到已有 .http
+              Attach to existing .http
             </Button>
           </div>
         )}
-        <div className="truncate">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="ui-chip truncate">
             {currentRequest.name || `${currentRequest.method} ${currentRequest.url}`}
+          </span>
+          <span className="ui-chip">
+            Env {activeEnvironments.length > 0 ? activeEnvironments.join(', ') : 'Default'}
+          </span>
+          <span className="ui-chip">
+            Tags {currentTags.length > 0 ? currentTags.join(', ') : 'None'}
+          </span>
+          <span className="ui-chip">
+            Last sent {formatLastSent(lastSentAt)}
           </span>
         </div>
       </div>
@@ -436,9 +557,9 @@ export const EditorApp: React.FC = () => {
         </div>
       )}
 
-      {requestCopyFeedback ? (
+      {requestCopyFeedback || responseCopyFeedback ? (
         <div className="ui-subbar px-4 py-1 text-xs text-[var(--vscode-descriptionForeground)]">
-          {requestCopyFeedback}
+          {requestCopyFeedback || responseCopyFeedback}
         </div>
       ) : null}
 
@@ -449,8 +570,8 @@ export const EditorApp: React.FC = () => {
           className="flex flex-col overflow-hidden border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]"
           style={{ height: `${splitRatio}%` }}
         >
-          <Tabs defaultValue="params" className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-3 pt-2">
+          <Tabs value={requestTab} onValueChange={(v) => setRequestTab(v as typeof requestTab)} className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-3 pt-2 flex items-center justify-between gap-3">
               <TabsList className="pro-tabs w-full justify-start border-b-0">
                 <TabsTrigger value="meta" className="pro-tab">
                 Meta
@@ -486,13 +607,16 @@ export const EditorApp: React.FC = () => {
                 Scripts
                 </TabsTrigger>
               </TabsList>
+              <span className="text-[10px] text-[var(--vscode-descriptionForeground)] whitespace-nowrap">
+                Tabs: Alt+1~6
+              </span>
             </div>
 
             <div className="flex-1 overflow-auto">
               <TabsContent value="meta" className="m-0 p-4 h-full">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)]">
-                    常用 Meta
+                    Common Meta
                   </div>
                   <div className="flex rounded overflow-hidden border border-[var(--vscode-input-border)]">
                     {(['quick', 'advanced'] as const).map(mode => (
@@ -505,7 +629,7 @@ export const EditorApp: React.FC = () => {
                             : 'bg-[var(--vscode-input-background)] text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]'
                         }`}
                       >
-                        {mode === 'quick' ? '快捷' : '高级'}
+                        {mode === 'quick' ? 'Quick' : 'Advanced'}
                       </button>
                     ))}
                   </div>
@@ -521,7 +645,7 @@ export const EditorApp: React.FC = () => {
                           const value = e.target.value;
                           upsertMeta('name', value, value.trim().length > 0);
                         }}
-                        placeholder="请求名称"
+                        placeholder="Request name"
                         className="w-full px-3 py-2 bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded text-sm"
                       />
                     </div>
@@ -533,7 +657,7 @@ export const EditorApp: React.FC = () => {
                           const value = e.target.value;
                           upsertMeta('tag', value, value.trim().length > 0);
                         }}
-                        placeholder="标签（逗号分隔）"
+                        placeholder="Tags (comma-separated)"
                         className="w-full px-3 py-2 bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded text-sm"
                       />
                     </div>
@@ -545,7 +669,7 @@ export const EditorApp: React.FC = () => {
                           const value = e.target.value;
                           upsertMeta('timeout', value, value.trim().length > 0);
                         }}
-                        placeholder="毫秒"
+                        placeholder="ms"
                         className="w-full px-3 py-2 bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded text-sm"
                       />
                     </div>
@@ -558,11 +682,11 @@ export const EditorApp: React.FC = () => {
                           onChange={(e) => upsertMeta('disabled', '', e.target.checked)}
                           className="h-4 w-4 cursor-pointer accent-[var(--vscode-focusBorder)]"
                         />
-                        <span className="text-xs text-[var(--vscode-descriptionForeground)]">禁用该请求</span>
+                        <span className="text-xs text-[var(--vscode-descriptionForeground)]">Disable this request</span>
                       </div>
                     </div>
                     <div className="col-span-2 text-xs text-[var(--vscode-descriptionForeground)]">
-                      示例：@name / @tag / @timeout / @disabled 等。可切换到高级模式编辑任意 meta。
+                      Examples: @name / @tag / @timeout / @disabled. Switch to Advanced to edit any meta.
                     </div>
                   </div>
                 ) : (
@@ -572,11 +696,12 @@ export const EditorApp: React.FC = () => {
                       onAdd={addMeta}
                       onUpdate={updateMeta}
                       onRemove={removeMeta}
+                      onItemsChange={(items) => updateRequest({ meta: items })}
                       keyPlaceholder="@key"
                       valuePlaceholder="value"
                     />
                     <p className="text-xs text-[var(--vscode-descriptionForeground)]">
-                      示例：@name / @tag / @timeout / @disabled 等。值可为空。
+                      Examples: @name / @tag / @timeout / @disabled. Values can be empty.
                     </p>
                   </div>
                 )}
@@ -591,7 +716,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => toggleAllParams(true)}
                     >
-                      全部启用
+                      Enable all
                     </Button>
                     <Button
                       variant="ghost"
@@ -599,7 +724,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => toggleAllParams(false)}
                     >
-                      全部禁用
+                      Disable all
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -609,7 +734,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => importParams('paste')}
                     >
-                      粘贴解析
+                      Paste to parse
                     </Button>
                     <Button
                       variant="ghost"
@@ -617,7 +742,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => importParams('curl')}
                     >
-                      导入 curl
+                      Import curl
                     </Button>
                   </div>
                 </div>
@@ -626,6 +751,7 @@ export const EditorApp: React.FC = () => {
                   onAdd={addParam}
                   onUpdate={updateParam}
                   onRemove={removeParam}
+                  onItemsChange={(items) => updateRequest({ params: items })}
                   keyPlaceholder="Parameter name"
                   valuePlaceholder="Parameter value"
                 />
@@ -644,7 +770,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => toggleAllHeaders(true)}
                     >
-                      全部启用
+                      Enable all
                     </Button>
                     <Button
                       variant="ghost"
@@ -652,7 +778,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => toggleAllHeaders(false)}
                     >
-                      全部禁用
+                      Disable all
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -662,7 +788,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => importHeaders('paste')}
                     >
-                      粘贴解析
+                      Paste to parse
                     </Button>
                     <Button
                       variant="ghost"
@@ -670,7 +796,7 @@ export const EditorApp: React.FC = () => {
                       className="h-7 px-2 text-xs"
                       onClick={() => importHeaders('curl')}
                     >
-                      导入 curl
+                      Import curl
                     </Button>
                   </div>
                 </div>
@@ -679,6 +805,7 @@ export const EditorApp: React.FC = () => {
                   onAdd={addHeader}
                   onUpdate={updateHeader}
                   onRemove={removeHeader}
+                  onItemsChange={(items) => updateRequest({ headers: items })}
                   keyPlaceholder="Header name"
                   valuePlaceholder="Header value"
                 />
@@ -712,7 +839,7 @@ export const EditorApp: React.FC = () => {
                     <textarea
                       value={currentRequest.preRequestScript || ''}
                       onChange={(e) => setPreRequestScript(e.target.value)}
-                      placeholder="在请求前执行的脚本（JS）"
+                      placeholder="Run before request (JS)"
                       className="code-area w-full min-h-[140px]"
                       spellCheck={false}
                     />
@@ -739,7 +866,7 @@ export const EditorApp: React.FC = () => {
                     <textarea
                       value={currentRequest.testScript || ''}
                       onChange={(e) => setTestScript(e.target.value)}
-                      placeholder="在响应后执行的测试脚本（JS）"
+                      placeholder="Run after response (JS)"
                       className="code-area w-full min-h-[160px]"
                       spellCheck={false}
                     />
@@ -785,6 +912,7 @@ export const EditorApp: React.FC = () => {
               response={currentResponse}
               request={currentRequest}
               onSaveSnippet={() => saveToHttpFile(currentRequest)}
+              onAppendSnippet={() => appendToHttpFile(currentRequest)}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-[var(--vscode-descriptionForeground)]">
@@ -801,7 +929,7 @@ export const EditorApp: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6">
           <div className="w-full max-w-3xl ui-card shadow-lg overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-tab-inactiveBackground)]">
-              <div className="text-sm font-medium text-[var(--vscode-foreground)]">请求预览</div>
+              <div className="text-sm font-medium text-[var(--vscode-foreground)]">Request preview</div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -810,21 +938,21 @@ export const EditorApp: React.FC = () => {
                   onClick={() => {
                     if (requestText) {
                       navigator.clipboard.writeText(requestText);
-                      setRequestCopyFeedback('已复制请求');
+                      setRequestCopyFeedback('Request copied');
                       window.setTimeout(() => setRequestCopyFeedback(''), 1500);
                     }
                   }}
                 >
-                  复制
+                  Copy
                 </Button>
                 <Button variant="ghost" size="sm" className="h-7 px-3 text-xs ui-hover" onClick={closePreview}>
-                  关闭
+                  Close
                 </Button>
               </div>
             </div>
             <div className="p-4 max-h-[70vh] overflow-auto">
               {requestTextLoading ? (
-                <div className="text-sm text-[var(--vscode-descriptionForeground)]">生成中...</div>
+                <div className="text-sm text-[var(--vscode-descriptionForeground)]">Generating...</div>
               ) : (
                 <pre className="code-area text-sm whitespace-pre-wrap">{requestText}</pre>
               )}

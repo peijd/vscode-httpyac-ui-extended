@@ -12,6 +12,7 @@ export type MessageType =
   | 'collectionsUpdated'
   | 'createCollection'
   | 'saveToHttpFile'
+  | 'appendToHttpFile'
   | 'saveRequest'
   | 'getRequestText'
   | 'requestText'

@@ -2,15 +2,22 @@ import React from 'react';
 
 interface ResponseHeadersProps {
   headers: Record<string, string>;
+  filterPrefix?: string;
 }
 
-export const ResponseHeaders: React.FC<ResponseHeadersProps> = ({ headers }) => {
-  const entries = Object.entries(headers);
+export const ResponseHeaders: React.FC<ResponseHeadersProps> = ({ headers, filterPrefix }) => {
+  const normalizedPrefix = filterPrefix?.trim().toLowerCase() || '';
+  const entries = Object.entries(headers).filter(([key]) => {
+    if (!normalizedPrefix) {
+      return true;
+    }
+    return key.toLowerCase().startsWith(normalizedPrefix);
+  });
 
   if (entries.length === 0) {
     return (
       <div className="p-4 text-[var(--vscode-descriptionForeground)]">
-        No headers in response
+        {normalizedPrefix ? 'No headers match this prefix' : 'No headers in response'}
       </div>
     );
   }
@@ -40,4 +47,3 @@ export const ResponseHeaders: React.FC<ResponseHeadersProps> = ({ headers }) => 
     </div>
   );
 };
-

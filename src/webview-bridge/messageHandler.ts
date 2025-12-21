@@ -87,6 +87,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'saveToHttpFile':
         await this.handleSaveToHttpFile(message.payload as HttpRequest);
         break;
+      case 'appendToHttpFile':
+        await this.handleAppendToHttpFile(message.payload as HttpRequest, webview);
+        break;
       case 'saveRequest':
         await this.handleSaveRequest(message.payload as HttpRequest, webview);
         break;
@@ -251,6 +254,37 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleAppendToHttpFile(request: HttpRequest, webview?: vscode.Webview): Promise<void> {
+    try {
+      let targetUri: vscode.Uri | undefined;
+      if (request?.source?.filePath) {
+        targetUri = vscode.Uri.file(request.source.filePath);
+      } else {
+        const current = await this.documentStore.getCurrentHttpFile();
+        if (current) {
+          targetUri = toUri(current.fileName);
+        }
+      }
+
+      if (!targetUri) {
+        vscode.window.showWarningMessage('No .http file found to append. Open a .http file first.');
+        return;
+      }
+
+      const linked = await this.appendRequestToFile(request, targetUri, webview);
+      if (linked) {
+        vscode.window.showInformationMessage(`Request appended to ${targetUri.fsPath}`);
+      } else {
+        vscode.window.showWarningMessage(
+          `Request appended to ${targetUri.fsPath}, but the region could not be located. Please verify manually.`
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      vscode.window.showErrorMessage(`Failed to append request: ${message}`);
+    }
+  }
+
   private async handleSaveRequest(request: HttpRequest, webview?: vscode.Webview): Promise<void> {
     if (!request?.source?.filePath) {
       await this.handleSaveToHttpFile(request);
@@ -265,19 +299,19 @@ export class WebviewMessageHandler implements vscode.Disposable {
 
       const targetRegion = this.findRegionForRequest(httpFile, request);
       if (!targetRegion) {
-        vscode.window.showErrorMessage('未找到对应的请求区域，请确认 .http 文件未发生结构变化。');
+        vscode.window.showErrorMessage('Request region not found. Please verify the .http file structure.');
         return;
       }
 
       const regionHash = computeHttpRegionSourceHash(targetRegion);
       if (request.source?.sourceHash && regionHash && request.source.sourceHash !== regionHash) {
         const pick = await vscode.window.showWarningMessage(
-          '检测到 .http 文件可能已被外部修改，是否继续覆盖保存？',
+          'The .http file may have been modified externally. Overwrite anyway?',
           { modal: true },
-          '覆盖保存',
-          '取消'
+          'Overwrite',
+          'Cancel'
         );
-        if (pick !== '覆盖保存') {
+        if (pick !== 'Overwrite') {
           return;
         }
       }
@@ -286,8 +320,8 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const updatedFile = this.replaceRegionInFile(fileText, targetRegion, updatedRegion);
 
       await vscode.workspace.fs.writeFile(uri, Buffer.from(updatedFile, 'utf-8'));
-      const choice = await vscode.window.showInformationMessage('请求已保存到 .http 文件', '撤销');
-      if (choice === '撤销') {
+      const choice = await vscode.window.showInformationMessage('Request saved to .http file', 'Undo');
+      if (choice === 'Undo') {
         await vscode.workspace.fs.writeFile(uri, Buffer.from(fileText, 'utf-8'));
         return;
       }
@@ -309,7 +343,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage(`保存请求失败: ${message}`);
+      vscode.window.showErrorMessage(`Failed to save request: ${message}`);
     }
   }
 
@@ -398,6 +432,8 @@ export class WebviewMessageHandler implements vscode.Disposable {
     filePath: string;
     line?: number;
     endLine?: number;
+    sourceHash?: string;
+    regionSymbolName?: string;
   }): Promise<void> {
     try {
       if (!payload?.filePath) {
@@ -405,9 +441,37 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
       const uri = vscode.Uri.file(payload.filePath);
       const document = await vscode.workspace.openTextDocument(uri);
-      const line = Math.max(payload.line ?? 0, 0);
-      const endLine = Math.max(payload.endLine ?? line, line);
-      const selection = new vscode.Selection(new vscode.Position(line, 0), new vscode.Position(endLine, 0));
+      const lineCount = document.lineCount;
+      let startLine = typeof payload.line === 'number' ? payload.line : undefined;
+      let endLine = typeof payload.endLine === 'number' ? payload.endLine : undefined;
+
+      const clampLine = (value: number) => Math.min(Math.max(value, 0), Math.max(lineCount - 1, 0));
+
+      if (startLine !== undefined) {
+        startLine = clampLine(startLine);
+      }
+      if (endLine !== undefined) {
+        endLine = clampLine(endLine);
+      }
+
+      if (payload.sourceHash || payload.regionSymbolName) {
+        const region = await this.findRegionBySource(uri, payload.sourceHash, payload.regionSymbolName);
+        if (region) {
+          startLine = clampLine(region.symbol.startLine);
+          endLine = clampLine(region.symbol.endLine);
+        }
+      }
+
+      if (startLine === undefined) {
+        await vscode.window.showTextDocument(document, { preview: false });
+        return;
+      }
+
+      const resolvedEndLine = endLine !== undefined ? Math.max(endLine, startLine) : startLine;
+      const selection = new vscode.Selection(
+        new vscode.Position(startLine, 0),
+        new vscode.Position(resolvedEndLine, 0)
+      );
       const editor = await vscode.window.showTextDocument(document, { preview: false, selection });
       editor.revealRange(
         new vscode.Range(selection.start, selection.end),
@@ -415,6 +479,32 @@ export class WebviewMessageHandler implements vscode.Disposable {
       );
     } catch (error) {
       console.error('Error opening source location:', error);
+    }
+  }
+
+  private async findRegionBySource(
+    uri: vscode.Uri,
+    sourceHash?: string,
+    regionSymbolName?: string
+  ): Promise<httpyac.HttpRegion | undefined> {
+    try {
+      const httpFile = await this.documentStore.getWithUri(uri);
+      const candidates = httpFile.httpRegions.filter(region => !region.isGlobal() && region.request);
+      if (sourceHash) {
+        const byHash = candidates.find(region => computeHttpRegionSourceHash(region) === sourceHash);
+        if (byHash) {
+          return byHash;
+        }
+      }
+      if (regionSymbolName) {
+        const bySymbol = candidates.find(region => region.symbol.name === regionSymbolName);
+        if (bySymbol) {
+          return bySymbol;
+        }
+      }
+      return undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -434,62 +524,73 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
 
       const targetUri = uri[0];
-      const fileBuffer = await vscode.workspace.fs.readFile(targetUri);
-      const fileText = Buffer.from(fileBuffer).toString('utf-8');
-      const eol = fileText.includes('\r\n') ? '\r\n' : '\n';
-
-      let updatedFile = fileText;
-      const hasContent = fileText.trim().length > 0;
-      if (hasContent && !updatedFile.endsWith('\n')) {
-        updatedFile += eol;
-      }
-      if (hasContent) {
-        updatedFile += eol;
-      }
-
-      const headerName = request.name && request.name !== 'New Request' ? `### ${request.name}` : '###';
-      const requestContent = convertRequestToHttpContent(request);
-      updatedFile += `${headerName}${eol}${requestContent}${eol}`;
-
-      await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedFile, 'utf-8'));
-
-      const httpFile = await this.documentStore.getWithUri(targetUri);
-      const requestHash = computeRequestSourceHash(request);
-      const targetRegion = httpFile.httpRegions.find(
-        region => !region.isGlobal() && region.request && computeHttpRegionSourceHash(region) === requestHash
-      );
-
-      let linked = false;
-      if (targetRegion && webview) {
-        const sourceHash = computeHttpRegionSourceHash(targetRegion);
-        this.postMessage(
-          {
-            type: 'setRequest',
-            payload: {
-              ...request,
-              source: {
-                filePath: targetUri.fsPath,
-                regionSymbolName: targetRegion.symbol.name,
-                regionStartLine: targetRegion.symbol.startLine,
-                regionEndLine: targetRegion.symbol.endLine,
-                sourceHash,
-              },
-            },
-          },
-          webview
-        );
-        linked = true;
-      }
+      const linked = await this.appendRequestToFile(request, targetUri, webview);
 
       if (linked) {
-        vscode.window.showInformationMessage(`请求已关联到 ${targetUri.fsPath}`);
+        vscode.window.showInformationMessage(`Request attached to ${targetUri.fsPath}`);
       } else {
-        vscode.window.showWarningMessage(`请求已追加到 ${targetUri.fsPath}，但未能定位区域，请手动检查。`);
+        vscode.window.showWarningMessage(
+          `Request appended to ${targetUri.fsPath}, but the region could not be located. Please verify manually.`
+        );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      vscode.window.showErrorMessage(`关联请求失败: ${message}`);
+      vscode.window.showErrorMessage(`Failed to attach request: ${message}`);
     }
+  }
+
+  private async appendRequestToFile(
+    request: HttpRequest,
+    targetUri: vscode.Uri,
+    webview?: vscode.Webview
+  ): Promise<boolean> {
+    const fileBuffer = await vscode.workspace.fs.readFile(targetUri);
+    const fileText = Buffer.from(fileBuffer).toString('utf-8');
+    const eol = fileText.includes('\r\n') ? '\r\n' : '\n';
+
+    let updatedFile = fileText;
+    const hasContent = fileText.trim().length > 0;
+    if (hasContent && !updatedFile.endsWith('\n')) {
+      updatedFile += eol;
+    }
+    if (hasContent) {
+      updatedFile += eol;
+    }
+
+    const headerName = request.name && request.name !== 'New Request' ? `### ${request.name}` : '###';
+    const requestContent = convertRequestToHttpContent(request);
+    updatedFile += `${headerName}${eol}${requestContent}${eol}`;
+
+    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(updatedFile, 'utf-8'));
+
+    const httpFile = await this.documentStore.getWithUri(targetUri);
+    const requestHash = computeRequestSourceHash(request);
+    const targetRegion = httpFile.httpRegions.find(
+      region => !region.isGlobal() && region.request && computeHttpRegionSourceHash(region) === requestHash
+    );
+
+    let linked = false;
+    if (targetRegion && webview) {
+      const sourceHash = computeHttpRegionSourceHash(targetRegion);
+      this.postMessage(
+        {
+          type: 'setRequest',
+          payload: {
+            ...request,
+            source: {
+              filePath: targetUri.fsPath,
+              regionSymbolName: targetRegion.symbol.name,
+              regionStartLine: targetRegion.symbol.startLine,
+              regionEndLine: targetRegion.symbol.endLine,
+              sourceHash,
+            },
+          },
+        },
+        webview
+      );
+      linked = true;
+    }
+    return linked;
   }
 
   private async handleOpenInEditor(request: HttpRequest): Promise<void> {

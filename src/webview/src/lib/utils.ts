@@ -86,6 +86,89 @@ export function formatJson(str: string): string {
   return str;
 }
 
+export function minifyJson(str: string): string {
+  const parsed = tryParseJson(str);
+  if (parsed) {
+    return JSON.stringify(parsed);
+  }
+  return str;
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(item => sortJsonValue(item));
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b, 'en')
+    );
+    const sorted: Record<string, unknown> = {};
+    for (const [key, val] of entries) {
+      sorted[key] = sortJsonValue(val);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+export function sortJsonKeys(str: string): string {
+  const parsed = tryParseJson(str);
+  if (parsed) {
+    const sorted = sortJsonValue(parsed);
+    return JSON.stringify(sorted, null, 2);
+  }
+  return str;
+}
+
+export function minifyWhitespace(str: string): string {
+  return str.replace(/\s+/gu, ' ').trim();
+}
+
+export function formatPlainText(str: string): string {
+  return str
+    .replace(/\r\n/gu, '\n')
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
+    .trim();
+}
+
+export function sortLines(str: string): string {
+  const lines = str
+    .replace(/\r\n/gu, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  return lines.sort((a, b) => a.localeCompare(b, 'en')).join('\n');
+}
+
+export function formatGraphql(str: string): string {
+  const cleaned = str.replace(/\r\n/gu, '\n').split('\n').map(line => line.trim()).filter(Boolean);
+  let indent = 0;
+  const formatted: string[] = [];
+  for (const line of cleaned) {
+    if (line.startsWith('}') || line.startsWith(']') || line.startsWith(')')) {
+      indent = Math.max(indent - 1, 0);
+    }
+    formatted.push(`${'  '.repeat(indent)}${line}`);
+    if (line.endsWith('{') || line.endsWith('(') || line.endsWith('[')) {
+      indent += 1;
+    }
+  }
+  return formatted.join('\n');
+}
+
+export function minifyGraphql(str: string): string {
+  return str.replace(/#.*$/gmu, '').replace(/\s+/gu, ' ').trim();
+}
+
+export function estimateBytes(str: string): number {
+  if (!str) {
+    return 0;
+  }
+  return new TextEncoder().encode(str).length;
+}
+
 export function isJsonContentType(contentType: string): boolean {
   return contentType.includes('application/json') || contentType.includes('+json');
 }
@@ -97,4 +180,3 @@ export function isHtmlContentType(contentType: string): boolean {
 export function isXmlContentType(contentType: string): boolean {
   return contentType.includes('application/xml') || contentType.includes('text/xml') || contentType.includes('+xml');
 }
-

@@ -12,6 +12,8 @@ export function useEditorMessages() {
     setLoading,
     setError,
     setRequestText,
+    setEnvironments,
+    setActiveEnvironments,
   } = useStore();
 
   useEffect(() => {
@@ -30,6 +32,20 @@ export function useEditorMessages() {
           setRequestText(payload?.text ?? '', message.requestId);
           break;
         }
+        case 'environmentsUpdated': {
+          const envData = message.payload as {
+            environments: Array<{ name: string; variables: Record<string, string> }>;
+            active: string[];
+          };
+          setEnvironments(
+            envData.environments.map((env) => ({
+              ...env,
+              isActive: envData.active.includes(env.name),
+            }))
+          );
+          setActiveEnvironments(envData.active);
+          break;
+        }
         case 'setRequest':
           setCurrentRequest(message.payload as HttpRequest);
           break;
@@ -39,7 +55,7 @@ export function useEditorMessages() {
     });
 
     return unsubscribe;
-  }, [setResponse, setLoading, setError, setRequestText, setCurrentRequest]);
+  }, [setResponse, setLoading, setError, setRequestText, setCurrentRequest, setEnvironments, setActiveEnvironments]);
 
   const sendRequest = useCallback(
     (request?: HttpRequest) => {
@@ -61,6 +77,13 @@ export function useEditorMessages() {
     [currentRequest]
   );
 
+  const appendToHttpFile = useCallback(
+    (request?: HttpRequest) => {
+      postMessage('appendToHttpFile', request || currentRequest);
+    },
+    [currentRequest]
+  );
+
   const saveRequest = useCallback(
     (request?: HttpRequest) => {
       postMessage('saveRequest', request || currentRequest);
@@ -77,9 +100,12 @@ export function useEditorMessages() {
     [currentRequest]
   );
 
-  const openSourceLocation = useCallback((filePath: string, line?: number, endLine?: number) => {
-    postMessage('openSourceLocation', { filePath, line, endLine });
-  }, []);
+  const openSourceLocation = useCallback(
+    (filePath: string, line?: number, endLine?: number, sourceHash?: string, regionSymbolName?: string) => {
+      postMessage('openSourceLocation', { filePath, line, endLine, sourceHash, regionSymbolName });
+    },
+    []
+  );
 
   const attachToHttpFile = useCallback((request: HttpRequest) => {
     postMessage('attachToHttpFile', request);
@@ -92,6 +118,7 @@ export function useEditorMessages() {
   return {
     sendRequest,
     saveToHttpFile,
+    appendToHttpFile,
     saveRequest,
     getRequestText,
     openSourceLocation,

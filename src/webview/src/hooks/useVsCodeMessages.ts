@@ -130,6 +130,13 @@ export function useVsCodeMessages() {
     [currentRequest]
   );
 
+  const appendToHttpFile = useCallback(
+    (request?: HttpRequest) => {
+      postMessage('appendToHttpFile', request || currentRequest);
+    },
+    [currentRequest]
+  );
+
   // Save request to source .http (fallback to Save As)
   const saveRequest = useCallback(
     (request?: HttpRequest) => {
@@ -157,9 +164,12 @@ export function useVsCodeMessages() {
     postMessage('openHttpFile', filePath);
   }, []);
 
-  const openSourceLocation = useCallback((filePath: string, line?: number, endLine?: number) => {
-    postMessage('openSourceLocation', { filePath, line, endLine });
-  }, []);
+  const openSourceLocation = useCallback(
+    (filePath: string, line?: number, endLine?: number, sourceHash?: string, regionSymbolName?: string) => {
+      postMessage('openSourceLocation', { filePath, line, endLine, sourceHash, regionSymbolName });
+    },
+    []
+  );
 
   const attachToHttpFile = useCallback((request: HttpRequest) => {
     postMessage('attachToHttpFile', request);
@@ -178,6 +188,7 @@ export function useVsCodeMessages() {
     requestCollections,
     createCollection,
     saveToHttpFile,
+    appendToHttpFile,
     saveRequest,
     getRequestText,
     openInEditor,
