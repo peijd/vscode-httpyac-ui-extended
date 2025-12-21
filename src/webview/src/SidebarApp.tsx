@@ -28,8 +28,11 @@ export const SidebarApp: React.FC = () => {
       url: '',
       params: [],
       headers: [],
+      meta: [],
       auth: { type: 'none' as const },
       body: { type: 'none' as const, content: '' },
+      preRequestScript: '',
+      testScript: '',
     };
     setCurrentRequest(newRequest);
     openInEditor(newRequest);

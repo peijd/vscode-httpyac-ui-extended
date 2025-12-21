@@ -73,6 +73,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'saveToHttpFile':
         await this.handleSaveToHttpFile(message.payload as HttpRequest);
         break;
+      case 'saveRequest':
+        await this.handleSaveRequest(message.payload as HttpRequest);
+        break;
       case 'openInEditor':
         await this.handleOpenInEditor(message.payload as HttpRequest);
         break;
@@ -95,26 +98,52 @@ export class WebviewMessageHandler implements vscode.Disposable {
     try {
       const startTime = Date.now();
       const httpContent = convertRequestToHttpContent(request);
-      const httpFile = await this.documentStore.parse(undefined, httpContent);
+      let parseUri: vscode.Uri | undefined;
+      if (request.source?.filePath) {
+        parseUri = vscode.Uri.file(request.source.filePath);
+      } else {
+        const current = await this.documentStore.getCurrentHttpFile();
+        if (current) {
+          parseUri = toUri(current.fileName);
+        }
+      }
+      const httpFile = await this.documentStore.parse(parseUri, httpContent);
 
       if (!httpFile || httpFile.httpRegions.length === 0) {
         throw new Error('Failed to parse request');
       }
 
-      const httpRegion = httpFile.httpRegions[0];
+      const httpRegion = httpFile.httpRegions.find(region => !region.isGlobal() && region.request);
+      if (!httpRegion) {
+        throw new Error('Failed to parse request');
+      }
+      let responseForWebview: httpyac.HttpResponse | undefined;
+      let activeEnvironment: string[] | undefined = this.documentStore.activeEnvironment;
+      if (!activeEnvironment && request.source?.filePath) {
+        try {
+          const sourceHttpFile = await this.documentStore.getWithUri(vscode.Uri.file(request.source.filePath));
+          activeEnvironment = this.documentStore.getActiveEnvironment(sourceHttpFile);
+        } catch {
+          // fallback to global active environment
+        }
+      }
+
       const context: httpyac.HttpRegionSendContext = {
         httpFile,
         httpRegion,
+        activeEnvironment,
       };
       context.logResponse = async (response, region) => {
         if (response) {
-          await this.responseStore.add(response, region);
+          responseForWebview = response;
+          const cloned = httpyac.utils.cloneResponse(response);
+          await this.responseStore.add(cloned, region, false);
         }
       };
 
       await this.documentStore.send(context);
 
-      const response = httpRegion.response;
+      const response = responseForWebview || httpRegion?.response;
       if (response) {
         const httpResponse = this.toHttpResponse(response, httpRegion.testResults, startTime);
         this.postMessage(
@@ -175,6 +204,35 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleSaveRequest(request: HttpRequest): Promise<void> {
+    if (!request?.source?.filePath) {
+      await this.handleSaveToHttpFile(request);
+      return;
+    }
+
+    try {
+      const uri = vscode.Uri.file(request.source.filePath);
+      const fileBuffer = await vscode.workspace.fs.readFile(uri);
+      const fileText = Buffer.from(fileBuffer).toString('utf-8');
+      const httpFile = await this.documentStore.getWithUri(uri);
+
+      const targetRegion = this.findRegionForRequest(httpFile, request);
+      if (!targetRegion) {
+        vscode.window.showErrorMessage('未找到对应的请求区域，请确认 .http 文件未发生结构变化。');
+        return;
+      }
+
+      const updatedRegion = this.buildUpdatedRegionContent(targetRegion, request);
+      const updatedFile = this.replaceRegionInFile(fileText, targetRegion, updatedRegion);
+
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(updatedFile, 'utf-8'));
+      vscode.window.showInformationMessage('请求已保存到 .http 文件');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      vscode.window.showErrorMessage('保存请求失败: ' + message);
+    }
+  }
+
   private async handleCreateCollection(): Promise<void> {
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
@@ -209,11 +267,25 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const httpFile = await this.documentStore.getWithUri(uri);
       const requests = httpFile.httpRegions
         .filter(region => !region.isGlobal() && region.request)
-        .map(region => ({
-          region,
-          request: convertHttpRegionToRequest(region),
-        }))
-        .filter(obj => obj.request);
+        .map(region => {
+          const request = convertHttpRegionToRequest(region);
+          if (!request) {
+            return undefined;
+          }
+          return {
+            region,
+            request: {
+              ...request,
+              source: {
+                filePath: uri.fsPath,
+                regionSymbolName: region.symbol.name,
+                regionStartLine: region.symbol.startLine,
+                regionEndLine: region.symbol.endLine,
+              },
+            },
+          };
+        })
+        .filter((obj): obj is { region: httpyac.HttpRegion; request: HttpRequest } => !!obj?.request);
 
       if (requests.length === 1) {
         await this.handleOpenInEditor(requests[0].request as HttpRequest);
@@ -295,9 +367,12 @@ export class WebviewMessageHandler implements vscode.Disposable {
       );
       environments.push(...envEntries);
       const activeEnv = this.documentStore.getActiveEnvironment(httpFile);
-      if (activeEnv) {
+      if (activeEnv && activeEnv.length > 0) {
         active.push(...activeEnv);
       }
+    }
+    if (active.length === 0 && this.documentStore.activeEnvironment) {
+      active.push(...this.documentStore.activeEnvironment);
     }
     return { environments, active };
   }
@@ -598,8 +673,191 @@ export class WebviewMessageHandler implements vscode.Disposable {
       id,
       name: displayName || request.name || region.symbol.name || request.url,
       type: 'request',
-      request: { ...request, name: displayName || request.name },
+      request: {
+        ...request,
+        name: displayName || request.name,
+        source: {
+          filePath: uri.fsPath,
+          regionSymbolName: region.symbol.name,
+          regionStartLine: region.symbol.startLine,
+          regionEndLine: region.symbol.endLine,
+        },
+      },
       httpFilePath: uri.fsPath,
     };
+  }
+
+  private findRegionForRequest(httpFile: httpyac.HttpFile, request: HttpRequest): httpyac.HttpRegion | undefined {
+    const candidates = httpFile.httpRegions.filter(region => !region.isGlobal() && region.request);
+    const source = request.source;
+
+    if (source?.regionSymbolName) {
+      const bySymbol = candidates.find(
+        region =>
+          region.symbol.name === source.regionSymbolName &&
+          (source.regionStartLine === undefined || region.symbol.startLine === source.regionStartLine)
+      );
+      if (bySymbol) {
+        return bySymbol;
+      }
+    }
+
+    if (source?.regionStartLine !== undefined) {
+      const byLine = candidates.find(region => region.symbol.startLine === source.regionStartLine);
+      if (byLine) {
+        return byLine;
+      }
+    }
+
+    const byName = candidates.find(region => getHttpRegionDisplayName(region) === request.name);
+    if (byName) {
+      return byName;
+    }
+
+    return undefined;
+  }
+
+  private buildUpdatedRegionContent(region: httpyac.HttpRegion, request: HttpRequest): string {
+    const originalSource = region.symbol.source || '';
+    const lines = originalSource.split(/\r?\n/u);
+    const requestLineIndex = lines.findIndex(line => /^\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)\s+/iu.test(line));
+
+    if (requestLineIndex === -1) {
+      return convertRequestToHttpContent(request);
+    }
+
+    const prefixLines = lines.slice(0, requestLineIndex);
+    const cleanedPrefix: string[] = [];
+    let inScript = false;
+    for (const line of prefixLines) {
+      if (line.trim() === '> {%') {
+        inScript = true;
+        continue;
+      }
+      if (inScript) {
+        if (line.trim() === '%}') {
+          inScript = false;
+        }
+        continue;
+      }
+      cleanedPrefix.push(line);
+    }
+
+    const metaLineIndices = cleanedPrefix
+      .map((line, index) => (/\s*#?\s*@/u.test(line) ? index : -1))
+      .filter(index => index >= 0);
+
+    const filteredPrefix = cleanedPrefix.filter(line => !/\s*#?\s*@/u.test(line));
+    const insertIndex = metaLineIndices.length > 0 ? Math.min(...metaLineIndices) : 0;
+
+    const metaItems = request.meta || [];
+    const metaLines = metaItems
+      .filter(item => item.enabled && item.key)
+      .map(item => {
+        const key = item.key.startsWith('@') ? item.key.slice(1) : item.key;
+        const value = item.value?.trim();
+        return value ? `# @${key} ${value}` : `# @${key}`;
+      });
+
+    if (request.auth.type === 'oauth2' && request.auth.oauth2) {
+      const hasMeta = (key: string) =>
+        metaItems.some(item => item.enabled && item.key.replace(/^@/u, '').toLowerCase() === key.toLowerCase());
+      if (!hasMeta('oauth2')) {
+        metaLines.push(`# @oauth2 ${request.auth.oauth2.grantType}`);
+      }
+      if (!hasMeta('tokenUrl')) {
+        metaLines.push(`# @tokenUrl ${request.auth.oauth2.tokenUrl}`);
+      }
+      if (!hasMeta('clientId')) {
+        metaLines.push(`# @clientId ${request.auth.oauth2.clientId}`);
+      }
+      if (request.auth.oauth2.scope && !hasMeta('scope')) {
+        metaLines.push(`# @scope ${request.auth.oauth2.scope}`);
+      }
+    }
+
+    const prefixWithMeta = [
+      ...filteredPrefix.slice(0, insertIndex),
+      ...metaLines,
+      ...filteredPrefix.slice(insertIndex),
+    ];
+
+    const preScriptLines = request.preRequestScript
+      ? ['> {%', ...request.preRequestScript.split(/\r?\n/u), '%}']
+      : [];
+
+    const testScriptLines = request.testScript
+      ? ['> {%', ...request.testScript.split(/\r?\n/u), '%}']
+      : [];
+
+    const requestLines = httpyac.utils.toHttpStringRequest(
+      {
+        method: request.method,
+        url: (() => {
+          let url = request.url || '';
+          const params = request.params.filter(p => p.enabled && p.key);
+          if (params.length > 0) {
+            const query = params
+              .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+              .join('&');
+            url += (url.includes('?') ? '&' : '?') + query;
+          }
+          return url;
+        })(),
+        headers: (() => {
+          const headers: Record<string, unknown> = {};
+          const addHeader = (key: string, value: string) => {
+            if (headers[key]) {
+              const current = headers[key];
+              headers[key] = Array.isArray(current) ? [...current, value] : [current as string, value];
+            } else {
+              headers[key] = value;
+            }
+          };
+          for (const header of request.headers.filter(h => h.enabled && h.key)) {
+            addHeader(header.key, header.value);
+          }
+          if (request.auth.type === 'basic' && request.auth.basic) {
+            const credentials = Buffer.from(
+              `${request.auth.basic.username}:${request.auth.basic.password}`
+            ).toString('base64');
+            addHeader('Authorization', `Basic ${credentials}`);
+          } else if (request.auth.type === 'bearer' && request.auth.bearer) {
+            addHeader('Authorization', `Bearer ${request.auth.bearer.token}`);
+          }
+          return headers;
+        })(),
+        body: (() => {
+          if (request.body.type === 'none') return undefined;
+          if ((request.body.type === 'form' || request.body.type === 'formdata') && request.body.formData) {
+            return request.body.formData
+              .filter(f => f.enabled && f.key)
+              .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
+              .join('&');
+          }
+          return request.body.content || '';
+        })(),
+      },
+      { body: request.body.type !== 'none' }
+    );
+
+    return [
+      ...prefixWithMeta,
+      ...preScriptLines,
+      ...requestLines,
+      ...testScriptLines,
+    ].join('\n');
+  }
+
+  private replaceRegionInFile(fileText: string, region: httpyac.HttpRegion, updatedRegion: string): string {
+    const eol = fileText.includes('\r\n') ? '\r\n' : '\n';
+    const lines = fileText.split(/\r?\n/u);
+    const start = region.symbol.startLine;
+    const end = region.symbol.endLine;
+    const updatedLines = updatedRegion.split(/\r?\n/u);
+
+    const before = lines.slice(0, start);
+    const after = lines.slice(end + 1);
+    return [...before, ...updatedLines, ...after].join(eol);
   }
 }

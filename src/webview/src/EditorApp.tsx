@@ -31,9 +31,14 @@ export const EditorApp: React.FC = () => {
     setAuth,
     setBodyType,
     setBodyContent,
+    addMeta,
+    updateMeta,
+    removeMeta,
+    setPreRequestScript,
+    setTestScript,
   } = useStore();
 
-  const { sendRequest, saveToHttpFile, notifyReady, requestEnvironments } = useVsCodeMessages();
+  const { sendRequest, saveRequest, saveToHttpFile, notifyReady } = useVsCodeMessages();
   const [splitRatio, setSplitRatio] = useState(50); // percentage for request panel
 
   // Initialize on mount and load initial request if present
@@ -47,8 +52,7 @@ export const EditorApp: React.FC = () => {
     }
     
     notifyReady();
-    requestEnvironments();
-  }, [notifyReady, requestEnvironments, setCurrentRequest]);
+  }, [notifyReady, setCurrentRequest]);
 
   const handleSend = () => {
     if (currentRequest.url) {
@@ -59,6 +63,14 @@ export const EditorApp: React.FC = () => {
   const handleBodyChange = (body: typeof currentRequest.body) => {
     setBodyType(body.type);
     setBodyContent(body.content);
+  };
+
+  const handleSave = () => {
+    if (currentRequest.source?.filePath) {
+      saveRequest();
+      return;
+    }
+    saveToHttpFile();
   };
 
   return (
@@ -89,8 +101,8 @@ export const EditorApp: React.FC = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => saveToHttpFile()}
-            title="Save to .http file"
+            onClick={handleSave}
+            title={currentRequest.source?.filePath ? 'Save to source .http file' : 'Save to .http file'}
             className="h-9 w-9"
           >
             <Save className="h-4 w-4" />
@@ -98,11 +110,27 @@ export const EditorApp: React.FC = () => {
           <Button
             variant="ghost"
             size="icon"
-            title="View as Code"
+            title="View as Code (coming soon)"
             className="h-9 w-9"
           >
             <Code className="h-4 w-4" />
           </Button>
+        </div>
+      </div>
+
+      {/* Source info */}
+      <div className="px-4 py-2 border-b border-[var(--vscode-panel-border)] text-xs text-[var(--vscode-descriptionForeground)] flex items-center justify-between gap-4">
+        <div className="truncate">
+          {currentRequest.source?.filePath ? (
+            <span>
+              关联文件：{currentRequest.source.filePath}
+            </span>
+          ) : (
+            <span>未关联 .http 文件（保存后创建）</span>
+          )}
+        </div>
+        <div className="truncate">
+          请求标识：{currentRequest.name || `${currentRequest.method} ${currentRequest.url}`}
         </div>
       </div>
 
@@ -122,6 +150,14 @@ export const EditorApp: React.FC = () => {
         >
           <Tabs defaultValue="params" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="px-3 shrink-0 justify-start bg-[var(--vscode-tab-inactiveBackground)] border-b border-[var(--vscode-panel-border)]">
+              <TabsTrigger value="meta" className="data-[state=active]:bg-[var(--vscode-tab-activeBackground)]">
+                Meta
+                {(currentRequest.meta || []).filter(m => m.enabled && m.key).length > 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-[var(--vscode-badge-background)] text-[var(--vscode-badge-foreground)]">
+                    {(currentRequest.meta || []).filter(m => m.enabled && m.key).length}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="params" className="data-[state=active]:bg-[var(--vscode-tab-activeBackground)]">
                 Params
                 {currentRequest.params.filter(p => p.enabled && p.key).length > 0 && (
@@ -150,6 +186,20 @@ export const EditorApp: React.FC = () => {
             </TabsList>
 
             <div className="flex-1 overflow-auto">
+              <TabsContent value="meta" className="m-0 p-4 h-full">
+                <KeyValueEditor
+                  items={currentRequest.meta || []}
+                  onAdd={addMeta}
+                  onUpdate={updateMeta}
+                  onRemove={removeMeta}
+                  keyPlaceholder="@key"
+                  valuePlaceholder="value"
+                />
+                <p className="text-xs text-[var(--vscode-descriptionForeground)] mt-2">
+                  示例：@name / @tag / @timeout / @disabled 等。值可为空。
+                </p>
+              </TabsContent>
+
               <TabsContent value="params" className="m-0 p-4 h-full">
                 <KeyValueEditor
                   items={currentRequest.params}
@@ -181,8 +231,31 @@ export const EditorApp: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="scripts" className="m-0 p-4 h-full">
-                <div className="text-[var(--vscode-descriptionForeground)] text-sm">
-                  Pre-request and test scripts coming soon...
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)] mb-2">
+                      Pre-request Script
+                    </div>
+                    <textarea
+                      value={currentRequest.preRequestScript || ''}
+                      onChange={(e) => setPreRequestScript(e.target.value)}
+                      placeholder="在请求前执行的脚本（JS）"
+                      className="code-area w-full min-h-[140px]"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)] mb-2">
+                      Test Script
+                    </div>
+                    <textarea
+                      value={currentRequest.testScript || ''}
+                      onChange={(e) => setTestScript(e.target.value)}
+                      placeholder="在响应后执行的测试脚本（JS）"
+                      className="code-area w-full min-h-[160px]"
+                      spellCheck={false}
+                    />
+                  </div>
                 </div>
               </TabsContent>
             </div>
@@ -234,4 +307,3 @@ export const EditorApp: React.FC = () => {
     </div>
   );
 };
-

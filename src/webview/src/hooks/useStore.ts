@@ -11,8 +11,11 @@ function createDefaultRequest(): HttpRequest {
     url: '',
     params: [],
     headers: [],
+    meta: [],
     auth: { type: 'none' },
     body: { type: 'none', content: '' },
+    preRequestScript: '',
+    testScript: '',
   };
 }
 
@@ -52,6 +55,15 @@ interface StoreActions {
 
   // Auth
   setAuth: (auth: HttpRequest['auth']) => void;
+
+  // Meta
+  addMeta: () => void;
+  updateMeta: (id: string, updates: Partial<KeyValue>) => void;
+  removeMeta: (id: string) => void;
+
+  // Scripts
+  setPreRequestScript: (script: string) => void;
+  setTestScript: (script: string) => void;
 
   // Response
   setResponse: (response: HttpResponse | null) => void;
@@ -179,6 +191,44 @@ export const useStore = create<Store>(set => ({
   setAuth: auth =>
     set(state => ({
       currentRequest: { ...state.currentRequest, auth },
+    })),
+
+  // Meta
+  addMeta: () =>
+    set(state => ({
+      currentRequest: {
+        ...state.currentRequest,
+        meta: [...(state.currentRequest.meta || []), createKeyValue()],
+      },
+    })),
+
+  updateMeta: (id, updates) =>
+    set(state => ({
+      currentRequest: {
+        ...state.currentRequest,
+        meta: (state.currentRequest.meta || []).map(item =>
+          item.id === id ? { ...item, ...updates } : item
+        ),
+      },
+    })),
+
+  removeMeta: id =>
+    set(state => ({
+      currentRequest: {
+        ...state.currentRequest,
+        meta: (state.currentRequest.meta || []).filter(item => item.id !== id),
+      },
+    })),
+
+  // Scripts
+  setPreRequestScript: preRequestScript =>
+    set(state => ({
+      currentRequest: { ...state.currentRequest, preRequestScript },
+    })),
+
+  setTestScript: testScript =>
+    set(state => ({
+      currentRequest: { ...state.currentRequest, testScript },
     })),
 
   // Response

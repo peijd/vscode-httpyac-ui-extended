@@ -41,6 +41,14 @@ export interface RequestBody {
   binaryPath?: string;
 }
 
+// Request source reference (from .http)
+export interface RequestSource {
+  filePath?: string;
+  regionSymbolName?: string;
+  regionStartLine?: number;
+  regionEndLine?: number;
+}
+
 // Complete HTTP Request
 export interface HttpRequest {
   id: string;
@@ -49,10 +57,12 @@ export interface HttpRequest {
   url: string;
   params: KeyValue[];
   headers: KeyValue[];
+  meta?: KeyValue[];
   auth: AuthConfig;
   body: RequestBody;
   preRequestScript?: string;
   testScript?: string;
+  source?: RequestSource;
 }
 
 // HTTP Response
@@ -125,6 +135,7 @@ export type MessageType =
   | 'collectionsUpdated'
   | 'createCollection'
   | 'saveToHttpFile'
+  | 'saveRequest'
   | 'openInEditor'
   | 'openHttpFile'
   | 'setRequest'

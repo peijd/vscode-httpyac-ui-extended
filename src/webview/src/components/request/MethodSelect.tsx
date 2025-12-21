@@ -2,7 +2,6 @@ import React from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui';
 import type { HttpMethod } from '@/types';
 import { cn, getMethodColor } from '@/lib/utils';
-import { ChevronDown } from 'lucide-react';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -22,7 +21,6 @@ export const MethodSelect: React.FC<MethodSelectProps> = ({ value, onChange, cla
         <SelectValue>
           <span className={cn('font-bold', getMethodColor(value))}>{value}</span>
         </SelectValue>
-        <ChevronDown className="h-4 w-4 opacity-50" />
       </SelectTrigger>
       <SelectContent className="bg-[var(--vscode-dropdown-background)] border-[var(--vscode-dropdown-border)]">
         {METHODS.map((method) => (
@@ -38,4 +36,3 @@ export const MethodSelect: React.FC<MethodSelectProps> = ({ value, onChange, cla
     </Select>
   );
 };
-

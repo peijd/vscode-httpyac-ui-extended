@@ -114,6 +114,14 @@ export function useVsCodeMessages() {
     [currentRequest]
   );
 
+  // Save request to source .http (fallback to Save As)
+  const saveRequest = useCallback(
+    (request?: HttpRequest) => {
+      postMessage('saveRequest', request || currentRequest);
+    },
+    [currentRequest]
+  );
+
   // Open request in editor panel
   const openInEditor = useCallback((request: HttpRequest) => {
     postMessage('openInEditor', request);
@@ -137,6 +145,7 @@ export function useVsCodeMessages() {
     requestCollections,
     createCollection,
     saveToHttpFile,
+    saveRequest,
     openInEditor,
     openHttpFile,
     notifyReady,

@@ -2,6 +2,16 @@ import * as httpyac from 'httpyac';
 import type { HttpRequest, KeyValue, AuthConfig, RequestBody, HttpMethod } from './messageTypes';
 import { v4 as uuidv4 } from 'uuid';
 
+const REQUEST_LINE_REGEX = /^\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)\s+\S+/i;
+
+function isScriptStartLine(line: string): boolean {
+  return line.trim() === '> {%';
+}
+
+function isScriptEndLine(line: string): boolean {
+  return line.trim() === '%}';
+}
+
 function getMetaText(metaData: httpyac.HttpRegion['metaData'], key: string): string | undefined {
   const value = metaData?.[key];
   if (typeof value === 'string') {
@@ -22,49 +32,34 @@ export function getHttpRegionDisplayName(httpRegion: httpyac.HttpRegion): string
   );
 }
 
-/**
- * Converts a webview HttpRequest to .http file content
- */
-export function convertRequestToHttpContent(request: HttpRequest): string {
-  const lines: string[] = [];
+function normalizeMetaKey(key: string): string {
+  return key.startsWith('@') ? key.slice(1) : key;
+}
 
-  // Add request name as comment if present
-  if (request.name && request.name !== 'New Request') {
-    lines.push(`# @name ${request.name}`);
+function buildMetaLines(meta: KeyValue[] | undefined): string[] {
+  if (!meta || meta.length === 0) {
+    return [];
   }
-
-  // Add auth headers if needed
-  const headers: KeyValue[] = [...request.headers];
-
-  if (request.auth.type === 'basic' && request.auth.basic) {
-    const credentials = Buffer.from(
-      `${request.auth.basic.username}:${request.auth.basic.password}`
-    ).toString('base64');
-    headers.push({
-      id: 'auth',
-      key: 'Authorization',
-      value: `Basic ${credentials}`,
-      enabled: true,
+  return meta
+    .filter(item => item.enabled && item.key)
+    .map(item => {
+      const key = normalizeMetaKey(item.key.trim());
+      const value = item.value?.trim();
+      return value ? `# @${key} ${value}` : `# @${key}`;
     });
-  } else if (request.auth.type === 'bearer' && request.auth.bearer) {
-    headers.push({
-      id: 'auth',
-      key: 'Authorization',
-      value: `Bearer ${request.auth.bearer.token}`,
-      enabled: true,
-    });
-  } else if (request.auth.type === 'oauth2' && request.auth.oauth2) {
-    // For OAuth2, add as metadata comment
-    lines.push(`# @oauth2 ${request.auth.oauth2.grantType}`);
-    lines.push(`# @tokenUrl ${request.auth.oauth2.tokenUrl}`);
-    lines.push(`# @clientId ${request.auth.oauth2.clientId}`);
-    if (request.auth.oauth2.scope) {
-      lines.push(`# @scope ${request.auth.oauth2.scope}`);
-    }
+}
+
+function buildScriptBlock(script: string | undefined): string[] {
+  const content = script?.trimEnd();
+  if (!content) {
+    return [];
   }
+  const lines = content.split(/\r?\n/u);
+  return ['> {%', ...lines, '%}'];
+}
 
-  // Build URL with params
-  let url = request.url;
+function buildUrlWithParams(request: HttpRequest): string {
+  let url = request.url || '';
   const enabledParams = request.params.filter(p => p.enabled && p.key);
   if (enabledParams.length > 0) {
     const queryString = enabledParams
@@ -72,38 +67,137 @@ export function convertRequestToHttpContent(request: HttpRequest): string {
       .join('&');
     url += (url.includes('?') ? '&' : '?') + queryString;
   }
+  return url;
+}
 
-  // Request line
-  lines.push(`${request.method} ${url}`);
+function buildHeaders(request: HttpRequest): Record<string, unknown> {
+  const headers: Record<string, unknown> = {};
+  const addHeader = (key: string, value: string) => {
+    if (headers[key]) {
+      const current = headers[key];
+      if (Array.isArray(current)) {
+        current.push(value);
+      } else {
+        headers[key] = [current as string, value];
+      }
+    } else {
+      headers[key] = value;
+    }
+  };
 
-  // Headers
-  for (const header of headers.filter(h => h.enabled && h.key)) {
-    lines.push(`${header.key}: ${header.value}`);
+  for (const header of request.headers.filter(h => h.enabled && h.key)) {
+    addHeader(header.key, header.value);
   }
 
-  // Body
-  if (request.body.type !== 'none') {
-    lines.push(''); // Empty line before body
+  if (request.auth.type === 'basic' && request.auth.basic) {
+    const credentials = Buffer.from(
+      `${request.auth.basic.username}:${request.auth.basic.password}`
+    ).toString('base64');
+    addHeader('Authorization', `Basic ${credentials}`);
+  } else if (request.auth.type === 'bearer' && request.auth.bearer) {
+    addHeader('Authorization', `Bearer ${request.auth.bearer.token}`);
+  }
 
-    if (request.body.type === 'json' || request.body.type === 'raw') {
-      lines.push(request.body.content);
-    } else if (request.body.type === 'form' || request.body.type === 'formdata') {
-      const formData = request.body.formData || [];
-      const formContent = formData
-        .filter(f => f.enabled && f.key)
-        .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
-        .join('&');
-      lines.push(formContent);
+  return headers;
+}
+
+function buildBodyContent(body: RequestBody): string | undefined {
+  if (body.type === 'none') {
+    return undefined;
+  }
+  if ((body.type === 'form' || body.type === 'formdata') && body.formData) {
+    return body.formData
+      .filter(f => f.enabled && f.key)
+      .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
+      .join('&');
+  }
+  return body.content || '';
+}
+
+function buildHttpyacRequest(request: HttpRequest): httpyac.Request {
+  return {
+    method: request.method,
+    url: buildUrlWithParams(request),
+    headers: buildHeaders(request),
+    body: buildBodyContent(request.body),
+  };
+}
+
+function findRequestLineIndex(lines: string[]): number {
+  return lines.findIndex(line => REQUEST_LINE_REGEX.test(line));
+}
+
+function extractScriptsFromSource(source: string | undefined): { preRequestScript?: string; testScript?: string } {
+  if (!source) {
+    return {};
+  }
+  const lines = source.split(/\r?\n/u);
+  const requestLineIndex = findRequestLineIndex(lines);
+  if (requestLineIndex === -1) {
+    return {};
+  }
+
+  const blocks: Array<{ start: number; end: number; content: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isScriptStartLine(lines[i] || '')) {
+      let end = i + 1;
+      const contentLines: string[] = [];
+      for (; end < lines.length; end++) {
+        if (isScriptEndLine(lines[end] || '')) {
+          break;
+        }
+        contentLines.push(lines[end]);
+      }
+      blocks.push({ start: i, end, content: contentLines.join('\n') });
+      i = end;
     }
   }
 
-  // Add test script if present
-  if (request.testScript) {
-    lines.push('');
-    lines.push('> {%');
-    lines.push(request.testScript);
-    lines.push('%}');
+  const preBlocks = blocks.filter(block => block.start < requestLineIndex).map(block => block.content.trim());
+  const testBlocks = blocks.filter(block => block.start > requestLineIndex).map(block => block.content.trim());
+
+  return {
+    preRequestScript: preBlocks.filter(Boolean).join('\n\n') || undefined,
+    testScript: testBlocks.filter(Boolean).join('\n\n') || undefined,
+  };
+}
+
+/**
+ * Converts a webview HttpRequest to .http file content
+ */
+export function convertRequestToHttpContent(request: HttpRequest): string {
+  const lines: string[] = [];
+
+  const metaLines = buildMetaLines(request.meta);
+  lines.push(...metaLines);
+
+  if (request.auth.type === 'oauth2' && request.auth.oauth2) {
+    const hasMeta = (key: string) =>
+      (request.meta || []).some(
+        item => item.enabled && normalizeMetaKey(item.key).toLowerCase() === key.toLowerCase()
+      );
+    if (!hasMeta('oauth2')) {
+      lines.push(`# @oauth2 ${request.auth.oauth2.grantType}`);
+    }
+    if (!hasMeta('tokenUrl')) {
+      lines.push(`# @tokenUrl ${request.auth.oauth2.tokenUrl}`);
+    }
+    if (!hasMeta('clientId')) {
+      lines.push(`# @clientId ${request.auth.oauth2.clientId}`);
+    }
+    if (request.auth.oauth2.scope && !hasMeta('scope')) {
+      lines.push(`# @scope ${request.auth.oauth2.scope}`);
+    }
   }
+
+  lines.push(...buildScriptBlock(request.preRequestScript));
+
+  const httpRequestLines = httpyac.utils.toHttpStringRequest(buildHttpyacRequest(request), {
+    body: request.body.type !== 'none',
+  });
+  lines.push(...httpRequestLines);
+
+  lines.push(...buildScriptBlock(request.testScript));
 
   return lines.join('\n');
 }
@@ -229,6 +323,17 @@ export function convertHttpRegionToRequest(
     // URL parsing failed, keep original URL
   }
 
+  const meta: KeyValue[] = Object.entries(httpRegion.metaData || {})
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => ({
+      id: uuidv4(),
+      key,
+      value: value === true ? '' : String(value),
+      enabled: true,
+    }));
+
+  const scripts = extractScriptsFromSource(httpRegion.symbol.source);
+
   return {
     id,
     name,
@@ -236,8 +341,11 @@ export function convertHttpRegionToRequest(
     url,
     params,
     headers,
+    meta,
     auth,
     body,
+    preRequestScript: scripts.preRequestScript,
+    testScript: scripts.testScript,
   };
 }
 
