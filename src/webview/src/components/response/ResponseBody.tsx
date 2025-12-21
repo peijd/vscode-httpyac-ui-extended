@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { formatJson, isJsonContentType, isHtmlContentType, tryParseJson } from '@/lib/utils';
-import { JsonHighlighter } from '@/components/common/JsonHighlighter';
+import { CodeEditor } from '@/components/common/CodeEditor';
 
 interface ResponseBodyProps {
   body: string;
@@ -67,13 +67,19 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
   // Code or Raw mode
   return (
     <div className="p-4">
-      <pre className="font-mono text-sm whitespace-pre overflow-x-auto">
-        {isJson && viewMode === 'tree' ? (
-          <JsonHighlighter json={formattedBody} />
-        ) : (
+      {viewMode === 'tree' ? (
+        <CodeEditor
+          value={formattedBody}
+          language={isJson ? 'json' : 'text'}
+          readOnly
+          minHeight={240}
+          maxHeight={520}
+        />
+      ) : (
+        <pre className="font-mono text-sm whitespace-pre overflow-x-auto">
           <code>{formattedBody}</code>
-        )}
-      </pre>
+        </pre>
+      )}
     </div>
   );
 };

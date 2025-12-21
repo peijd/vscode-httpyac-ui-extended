@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from '@/components/ui';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { RequestBody, KeyValue, BodyType } from '@/types';
 import { useStore, createKeyValue } from '@/hooks';
 import { formatJson, tryParseJson } from '@/lib/utils';
-import { JsonHighlighter } from '@/components/common/JsonHighlighter';
+import { CodeEditor } from '@/components/common/CodeEditor';
 
 interface BodyEditorProps {
   body: RequestBody;
@@ -24,22 +24,6 @@ const BODY_TYPES: { value: BodyType; label: string }[] = [
 ];
 
 export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
-  const highlightRef = useRef<HTMLDivElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const lineNumberRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (body.type !== 'json') {
-      return;
-    }
-    if (textareaRef.current && highlightRef.current) {
-      highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-      highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
-    }
-    if (textareaRef.current && lineNumberRef.current) {
-      lineNumberRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  }, [body.type]);
 
   const updateHeaders = (contentType: string) => {
     const { currentRequest, updateHeader, addHeader } = useStore.getState();
@@ -90,26 +74,9 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
       return { line, column, message };
     }
   }, [rawJson]);
-  const errorLine = errorInfo?.line ?? null;
 
-  const syncJsonScroll = () => {
-    if (!textareaRef.current || !highlightRef.current) {
-      return;
-    }
-    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-    highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
-    if (lineNumberRef.current) {
-      lineNumberRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  };
-
-  const handleJsonKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const isMac = navigator.platform.toLowerCase().includes('mac');
-    const isFormat = (isMac ? event.metaKey : event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f';
-    if (isFormat) {
-      event.preventDefault();
-      onChange({ ...body, content: formattedJson });
-    }
+  const handleFormat = () => {
+    onChange({ ...body, content: formattedJson });
   };
 
   const handleTypeChange = (type: BodyType) => {
@@ -178,54 +145,37 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
         </TabsContent>
 
         <TabsContent value="json">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-[var(--vscode-descriptionForeground)]">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-[var(--vscode-descriptionForeground)]">
                 JSON 高亮编辑
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                  onClick={handleFormat}
+                  >
+                    格式化
+                  </Button>
+                  <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                    {jsonValid ? 'JSON 可解析' : 'JSON 无效'}
+                  </span>
+                  <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                    {navigator.platform.toLowerCase().includes('mac') ? '⌘⇧F' : 'Ctrl+Shift+F'}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() => onChange({ ...body, content: formattedJson })}
-                >
-                  格式化
-                </Button>
-                <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
-                  {jsonValid ? 'JSON 可解析' : 'JSON 无效'}
-                </span>
-                <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">
-                  {navigator.platform.toLowerCase().includes('mac') ? '⌘⇧F' : 'Ctrl+Shift+F'}
-                </span>
-              </div>
-            </div>
-            <div className="json-editor-wrapper">
-              <div ref={lineNumberRef} className="json-editor__lines">
-                {Array.from({ length: rawJson.split('\n').length || 1 }).map((_, index) => {
-                  const lineNumber = index + 1;
-                  const isError = errorLine === lineNumber;
-                  return (
-                    <div key={lineNumber} className={isError ? 'json-editor__line error' : 'json-editor__line'}>
-                      {lineNumber}
-                    </div>
-                  );
-                })}
-              </div>
-              <div ref={highlightRef} className="json-editor__highlight">
-                <JsonHighlighter json={rawJson} showLineNumbers={false} />
-              </div>
-              <textarea
-                ref={textareaRef}
-                value={body.content}
-                onChange={(e) => onChange({ ...body, content: e.target.value })}
-                onScroll={syncJsonScroll}
-                onKeyDown={handleJsonKeyDown}
-                placeholder='{\n  "key": "value"\n}'
-                className={errorInfo ? 'json-editor__input error' : 'json-editor__input'}
-                spellCheck={false}
-              />
-            </div>
+            <CodeEditor
+              value={body.content}
+              language="json"
+              placeholder='{\n  "key": "value"\n}'
+              onChange={(value) => onChange({ ...body, content: value })}
+              onFormat={handleFormat}
+              minHeight={300}
+              maxHeight={420}
+            />
             {errorInfo ? (
               <div className="text-xs text-[var(--vscode-errorForeground)]">
                 {errorInfo.line ? `第 ${errorInfo.line} 行，第 ${errorInfo.column ?? 1} 列：` : ''}
