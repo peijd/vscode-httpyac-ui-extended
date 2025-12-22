@@ -24,7 +24,7 @@ An extended VS Code extension based on [httpyac](https://github.com/AnWeber/http
 
 ## UI Preview
 
-![Request Builder](examples/preview.gif)
+![Request Builder](examples/image.png)
 
 ## Quick Start
 
@@ -50,20 +50,20 @@ Authorization: Basic {{user}}{{password}}
 
 ## Common Commands
 
-| Command | Description |
-| --- | --- |
-| `httpyac.send` | Send request at cursor |
-| `httpyac.sendAll` | Send all requests in file |
-| `httpyac.sendSelected` | Send selected requests |
-| `httpyac.resend` | Resend last request |
-| `httpyac.show` | Show cached response |
-| `httpyac.viewHeader` | Show headers and timings |
-| `httpyac.save` | Save response to file |
-| `httpyac.generateCode` | Generate request code |
-| `httpyac.toggle-env` | Toggle environment |
-| `httpyac.showHistory` | Open history view |
-| `httpyac.clearHistory` | Clear history |
-| `httpyac.openRequestEditor` | Open request editor |
+| Command                     | Description               |
+| --------------------------- | ------------------------- |
+| `httpyac.send`              | Send request at cursor    |
+| `httpyac.sendAll`           | Send all requests in file |
+| `httpyac.sendSelected`      | Send selected requests    |
+| `httpyac.resend`            | Resend last request       |
+| `httpyac.show`              | Show cached response      |
+| `httpyac.viewHeader`        | Show headers and timings  |
+| `httpyac.save`              | Save response to file     |
+| `httpyac.generateCode`      | Generate request code     |
+| `httpyac.toggle-env`        | Toggle environment        |
+| `httpyac.showHistory`       | Open history view         |
+| `httpyac.clearHistory`      | Clear history             |
+| `httpyac.openRequestEditor` | Open request editor       |
 
 > Search `httpyac` in the command palette for the full list.
 
@@ -71,23 +71,23 @@ Authorization: Basic {{user}}{{password}}
 
 Active only in `http` / `rest` files:
 
-| Command | Windows/Linux | macOS |
-| --- | --- | --- |
-| `httpyac.send` | `Ctrl+Alt+R` | `Cmd+Alt+R` |
-| `httpyac.resend` | `Ctrl+Alt+L` | `Cmd+Alt+L` |
-| `httpyac.toggle-env` | `Ctrl+Alt+E` | `Cmd+Alt+E` |
-| `httpyac.generateCode` | `Ctrl+Alt+G` | `Cmd+Alt+G` |
+| Command                | Windows/Linux | macOS       |
+| ---------------------- | ------------- | ----------- |
+| `httpyac.send`         | `Ctrl+Alt+R`  | `Cmd+Alt+R` |
+| `httpyac.resend`       | `Ctrl+Alt+L`  | `Cmd+Alt+L` |
+| `httpyac.toggle-env`   | `Ctrl+Alt+E`  | `Cmd+Alt+E` |
+| `httpyac.generateCode` | `Ctrl+Alt+G`  | `Cmd+Alt+G` |
 
 ## Settings
 
-| Setting | Description | Default |
-| --- | --- | --- |
+| Setting                         | Description             | Default                       |
+| ------------------------------- | ----------------------- | ----------------------------- |
 | `httpyac.requestDefaultHeaders` | Default request headers | `{ "User-Agent": "httpyac" }` |
-| `httpyac.cookieJarEnabled` | Enable CookieJar | `true` |
-| `httpyac.envDirName` | Environment folder name | `"env"` |
-| `httpyac.responseViewMode` | Response view mode | `preview` |
-| `httpyac.logLevel` | Output log level | `warn` |
-| `httpyac.maxHistoryItems` | Max history entries | `50` |
+| `httpyac.cookieJarEnabled`      | Enable CookieJar        | `true`                        |
+| `httpyac.envDirName`            | Environment folder name | `"env"`                       |
+| `httpyac.responseViewMode`      | Response view mode      | `preview`                     |
+| `httpyac.logLevel`              | Output log level        | `warn`                        |
+| `httpyac.maxHistoryItems`       | Max history entries     | `50`                          |
 
 > Search `httpyac` in VS Code Settings for the full list.
 

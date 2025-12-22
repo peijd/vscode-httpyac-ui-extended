@@ -1,13 +1,21 @@
 # Changelog
 
+## [0.1.1] - 2025-12-22
+
+### Fix
+
+- fix description and readme
+
 ## [0.1.0] - 2025-12-22
 
 ### Added
+
 - Initial release (httpYac UI Extended)
 - Request Builder sidebar and Request Editor panel
 - Collections and history management with .http file round-trip
 
 ### Notes
+
 - Based on upstream httpyac 6.16.7; upstream history below
 
 ---
@@ -15,22 +23,26 @@
 ## [unreleased]
 
 ### Features
+
 - auto focus OutputChannel `Request` if responseViewMode None and no Test Run (#360)
 
 ## [6.16.7] (2025-03-30)
 
 ### Fix
+
 - ignore whitespace before & in formurlencoded (AnWeber/httpyac#699)
 - Invalid state error with authorization code flow when the state parameter is percent-encoded (AnWeber/httpyac#871)
 
 ## [6.16.6] (2025-01-11)
 
 ### Fix
+
 - allow proxy for oauth2 using `oauth2_proxy` (AnWeber/httpyac#841)
 
 ## [6.16.5] (2025-01-06)
 
 ### Fix
+
 - errored or skipped referenced httpregion also skips current http region (AnWeber/httpyac#842, #339)
 - failed requests did not update test runner indicator (#348)
 - override of script console in test runner does not prevent logging in output channel (#347)
@@ -39,9 +51,11 @@
 ## [6.16.4] (2024-11-03)
 
 ### Features
+
 - add support for better Buffer JSON stringify (AnWeber/httpyac#796)
 
 ### Fix
+
 - handle dom parser exception for invalid xml (AnWeber/httpyac#821)
 - do not log stack on assertions error (#338)
 - only clear output channel for test runs (#337)
@@ -51,6 +65,7 @@
 ## [6.16.3] (2024-10-30)
 
 ### Fix
+
 - revert: named response is only set, if all testResults are valid
 - changed behaviour from `@ref` (#336)
   - negative test results from reference does not stop dependent request
@@ -59,16 +74,20 @@
 ## [6.16.2] (2024-10-29)
 
 ### Fix
+
 - named response is only set, if all testResults are valid
 
 ## [6.16.1] ( 2024-10-29)
 
 ### Fix
+
 - support `https_proxy` environment variable
 - support html mimetype for dom parser and use only valid mimetype in parseFromString
 
 ## [6.16.0] ( 2024-10-28)
+
 ### Features
+
 - support client certificates on OAuth2 Requests (AnWeber/httpyac#802)
 - update tough-cookie to remove punycode deprecation warning (AnWeber/httpyac#813)
 - support $env intellij environment variables access (AnWeber/httpyac#811)
@@ -77,7 +96,9 @@
 - remove `unexpected-response` listener to support abortHandshake in ws (AnWeber/httpyac#816)
 
 ## [6.15.1] ( 2024-08-22)
+
 ### Features
+
 - prefix output with name as fallback for title (318)
 
 ### Fix
@@ -90,7 +111,9 @@
 - do not delete visible responses on reset envrionment (#317)
 
 ## [6.15.0] ( 2024-08-04)
+
 ### Features
+
 - add support to define timeout per request using `request.timeout` or setting variable `request_timeout`
 - add contextMenu Entry in explorer view (#313)
 - use vscode.LogOutputChannel for better Output Highlighting (#316)
@@ -98,22 +121,25 @@
   - allow resetting OutputChannel before runs
 
 ### Fix
+
 - variables in gql Query body are replaced (#303)
 - allow defaultHeaders to overwrite accept or user-agent header
 - only try loading grpc reflection if no other protodefinition file is imported or it is explicitly triggerd using grpcReflection (Anweber/httpyac#757)
 - add better handling for disabled and error tests (#297, Anweber/httpyac#760)
-- support empty passwords for Basic auth  (#751)
+- support empty passwords for Basic auth (#751)
 - error do not bail test runs and instead just set error for this httpRegion (Anweber/httpyac#708)
 - update label of testItem on httpRegion name change (#315)
 - add missing definitions to codeLens property (#314)
 
-
 ## [6.14.0] ( 2024-06-01)
+
 ### Features
+
 - add `--tag` support to cli to only execute httpRegion with defined tag (Anweber/httpyac#693)
 - add support to search for test tags in vscode (Anweber/httpyac#693)
 
 ### Fix
+
 - prevent readFile Error log output on package.json search (#293)
 - disabled MetaData Handler checks disabled State on occurence of line in execution order (#292)
 - support Intellij Multiline FormUrlEncoded Syntax (Anweber/httpyac#699)
@@ -123,68 +149,86 @@
 - test runner indicator support disabled test using `$cancel` variable (#292)
 
 ## [6.13.3]
+
 ### Fix
+
 - Aws Signing use query params in signing request (Anweber/httpyac#684)
 - allow check for floats (#283)
 
 ## [6.13.2] ( 2024-05-01)
+
 ### Fix
+
 - ensureUniqueId on merge (#280)
 - replace header variables after body variables to allow valide Request Signing (Anweber/httpyac#684)
 
 ## [6.13.1] ( 2024-04-29)
 
 ### Fix
+
 - `$random.integer() returns valid integer (#277)
 - prevent executing wrong test after file change (#278)
 
 ## [6.13.0]
+
 ### Features
+
 - update to new API Changes of Intellij Http Client
 - add support for OAuth2 Intellij API (#275)
 
 ## [6.12.1]
+
 ### Features
+
 - use an environment for all files/tabs (#272)
 
 ### Fix
+
 - implement indentation foldingrangeprovider for request body (#269)
 - request count ignores disabled region (Anweber/httpyac#663)
 - show replaced expected value in test results to improve user experience (Anweber/httpyac#663)
 
 ## [6.12.0] (2023-03-17)
+
 ### Features
+
 - add folding range provider (#265)
 
 ## [6.11.5] (2023-02-27)
+
 ### Fix
+
 - replace grpc-reflection-js with grpc-js-reflection-client
 - fix order of log output in cli (Anweber/httpyac#644)
 
 ## [6.11.6] (2023-02-25)
 
 ### Fix
+
 - Assertsions for Zero are working (#260)
 - typo in junit report.xml generation (AnWeber/httpyac#642)
 
 ## [6.11.4] (2023-02-02)
 
 ### Fix
-- Variable is replaced in multipart/form-data when file is injected (#258)
 
+- Variable is replaced in multipart/form-data when file is injected (#258)
 
 ## [6.11.3] (2023-01-31)
 
 ### Fix
+
 - hide password answer in sessionStore (AnWeber/httpbook#111)
 - add Content-Type if protocol `GRAPHQL` is used to support same API as Intellij HTTP Client (#257)
 
 ## [6.11.2] (2023-01-14)
 
 ### Feature
-- add navigation support to imported files (#250) 
+
+- add navigation support to imported files (#250)
 
 ### Fix
+
 - Intellij store variables independent from current env in global cache (Anweber/httpyac#612)
 - always use GRPC Reflection to support same Behaviour as Intellij (#254)
 - save of response is await before editor is shown (#252)
@@ -252,6 +296,7 @@
 - add support for grpc-reflection (Anweber/httpyac#566)
 
 ### Fix
+
 - only use default scope `opendid` if no scope is defined (Anweber/httpyac#560)
 - use repeat only in mainContext and not in forceRef calls (Anweber/httpyac#562)
 - store all connections as session in userStorage to allow disconnect (Anweber/httpyac#565)
@@ -278,21 +323,21 @@
 - responseItem for httpregion were not found, which caused an incorrect display of the CodeLens (#228)
 - improvements to completionItem API (#224)
 
-
-## [6.6.7]  (2023-09-18)
+## [6.6.7] (2023-09-18)
 
 ### Fixes
 
 - reenable Http Header completion (#223)
 
-## [6.6.6]  (2023-09-15)
+## [6.6.6] (2023-09-15)
 
 ### Fixes
+
 - resolve connect Promise in Websocket Requests on close before open Connection (AnWeber/httpbook#96)
 - fixed Syntax highlighting issue with Intellij scripts when JSON body is used (#220)
 - generate code did not load VSCode Settings configuration (#221)
 
-## [6.6.4]  (2023-09-02)
+## [6.6.4] (2023-09-02)
 
 ### Fixes
 
@@ -300,55 +345,56 @@
 - allow for variable use in $pick picklists: `{{ $pick ask-variable? $value: data }}` (Anweber/httpyac#537)
 - pre request in intellij format is executed before variable replacer (Anweber/httpyac#534)
 - allow removal of UserAgent Header (httpyac/httpyac.github.io#70) using script
+
 ```
 {{@request
   request.headers["User-Agent"] = undefined
 }}
 ```
+
 - Settings ignore `""` value (#215)
 - open Response Editor in same viewColumn as previous Editor (#216)
 
-## [6.6.3]  (2023-07-25)
+## [6.6.3] (2023-07-25)
 
 ### Fixes
 
 - support multiple `# @import` of the same file from different httpFiles (Anweber/httpyac#508)
 
-## [6.6.2]  (2023-07-24)
+## [6.6.2] (2023-07-24)
 
 ### Fixes
 
 - support OData Batch Processing (Anweber/httpyac#507)
 - update to httpsnippet@3.0.1
 
-
-## [6.6.1]  (2023-07-23)
+## [6.6.1] (2023-07-23)
 
 ### Fixes
 
 - improve stability of asserts using objects/arrays (Anweber/httpyac#503)
 
-## [6.6.0]  (2023-07-17)
+## [6.6.0] (2023-07-17)
 
 ### Features
 
 - add method `$getOAuth2Response` to javascript context (Anweber/httpyac#499)
 - add `HttpClientProvider` and `JavascriptProvider` to httpyac API
-- allow global Asserts and `onRequest`/ `onResponse` hooks and import global Asserts from other Http Files (Anweber/httpyac#488) 
+- allow global Asserts and `onRequest`/ `onResponse` hooks and import global Asserts from other Http Files (Anweber/httpyac#488)
 - support xpath namespaces using `@xpath_ns` (Anweber/httpyac#493)
 
 ### Fixes
 
 - always log current `httpRegion` and `response` on exception (Anweber/httpyac#275)
 
-## [6.5.1]  (2023-06-13)
+## [6.5.1] (2023-06-13)
 
 ### Fixes
 
 - `output=none` is respected in CLI (Anweber/httpyac#477)
 - `$input-askonce` does not ask again for existing variables (Anweber/httpyac#477)
 
-## [6.5.0]  (2023-06-11)
+## [6.5.0] (2023-06-11)
 
 ### Features
 
@@ -359,7 +405,7 @@
 
 - use `env` as default env dirname (#198)
 
-## [6.4.6]  (2023-06-09)
+## [6.4.6] (2023-06-09)
 
 ### Fixes
 

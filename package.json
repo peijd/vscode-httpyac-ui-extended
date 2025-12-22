@@ -4,7 +4,7 @@
   "license": "MIT",
   "publisher": "peijundong",
   "description": "UI-extended httpyac for VS Code, send HTTP/GraphQL/gRPC/WebSocket requests directly in the editor.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/peijd/vscode-httpyac-ui-extended"
