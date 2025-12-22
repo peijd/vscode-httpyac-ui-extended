@@ -2,8 +2,8 @@
   "name": "vscode-httpyac-ui-extended",
   "displayName": "httpYac UI Extended",
   "license": "MIT",
-  "publisher": "peijd",
-  "description": "httpyac 二次开发的 UI 扩展版，直接在 VS Code 中发送 HTTP/GraphQL/gRPC/WebSocket 等请求",
+  "publisher": "peijundong",
+  "description": "UI-extended httpyac for VS Code, send HTTP/GraphQL/gRPC/WebSocket requests directly in the editor.",
   "version": "0.1.0",
   "repository": {
     "type": "git",

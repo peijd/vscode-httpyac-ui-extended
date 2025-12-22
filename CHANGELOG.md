@@ -1,3 +1,16 @@
+# Changelog
+
+## [0.1.0] - 2025-12-22
+
+### Added
+- Initial release (httpYac UI Extended)
+- Request Builder sidebar and Request Editor panel
+- Collections and history management with .http file round-trip
+
+### Notes
+- Based on upstream httpyac 6.16.7; upstream history below
+
+---
 
 ## [unreleased]
 

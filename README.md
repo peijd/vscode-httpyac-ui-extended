@@ -1,19 +1,38 @@
 <p align="center">
-<img src="https://raw.githubusercontent.com/AnWeber/vscode-httpyac/master/icon.png" alt="HttpYac Logo" />
+  <img src="./icon.png" alt="httpYac UI Extended" width="128" />
 </p>
 
-# httpYac - Yet another Client
+# httpYac UI Extended
 
-> Quickly and easily send REST, SOAP, GraphQL or gRPC requests directly in Editor
+An extended VS Code extension based on [httpyac](https://github.com/AnWeber/httpyac), adding a more friendly visual Request Builder while preserving the full `.http/.rest` workflow.
 
-<p align="center">
-<a href="https://httpyac.github.io/">
-<img src="https://httpyac.github.io/httpyac_site.png" alt="HttpYac" />
-</a>
-<img src="https://raw.githubusercontent.com/AnWeber/vscode-httpyac/master/examples/oauth.gif" alt="HttpYac Extension" />
-</p>
+## Use Cases
 
-## Example
+- Debug HTTP/GraphQL/gRPC/WebSocket requests directly in VS Code
+- Prefer both a visual builder and plain-text `.http` files
+- Need environments, history, collections, and code generation
+
+## Highlights
+
+- **Request Builder sidebar** for visual editing, sending, and saving
+- **Request Editor panel** for focused request editing
+- **Rich protocol support**: HTTP/REST, GraphQL, gRPC, WebSocket, SSE, MQTT, AMQP
+- **History & Collections** in the sidebar
+- **Round-trip with `.http` files**: save/append/open & locate
+- **Code generation** for multiple languages
+- **Environments & variables** management
+
+## UI Preview
+
+![Request Builder](examples/preview.gif)
+
+## Quick Start
+
+1. Install `httpYac UI Extended` from the VS Code Marketplace.
+2. Open the Activity Bar view `httpyac` → `Request Builder` and create a request.
+3. Or create a `.http/.rest` file and send via CodeLens or command palette.
+
+Example request:
 
 ```http
 @user = doe
@@ -23,86 +42,69 @@ GET https://httpbin.org/basic-auth/{{user}}/{{password}}
 Authorization: Basic {{user}}{{password}}
 ```
 
-more [examples](https://httpyac.github.io/guide/examples) and [guide](https://httpyac.github.io/guide/)
+## Entry Points
 
-## Commands
+- **Request Builder**: Activity Bar `httpyac` view → `Request Builder`
+- **Request Editor**: Command Palette `httpyac.openRequestEditor`
+- **Send request**: Command Palette `httpyac.send` or CodeLens
 
-![Commands](https://raw.githubusercontent.com/AnWeber/vscode-httpyac/master/examples/commands.png)
+## Common Commands
 
-| Name                    | Description                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `httpyac.send`          | send request in ActiveTextEditor in active line                                                 |
-| `httpyac.sendAll`       | send all requests in ActiveTextEditor                                                           |
-| `httpyac.resend`        | resend last request                                                                             |
-| `httpyac.show`          | show cached response of request in ActiveTextEditor in active line                              |
-| `httpyac.viewHeader`    | show response headers, request header and timings of request in ActiveTextEditor in active line |
-| `httpyac.save`          | save response of request in ActiveTextEditor in active line                                     |
-| `httpyac.clearAll`      | clear all cached responses                                                                      |
-| `httpyac.toggle-env`    | toggle environment of active text document                                                      |
-| `httpyac.generateCode`  | generate code of request in ActiveTextEditor in active line                                     |
-| `httpyac.reset`         | reset environments, oauth sessions and cookies                                                  |
-| `httpyac.logout`        | see current oauth2 sessions and logout                                                          |
-| `httpyac.removeCookies` | remove received cookies                                                                         |
-| `httpyac.new`           | create empty http file                                                                          |
-| `httpyac.showHistory`   | show response history                                                                           |
-| `httpyac.clearHistory`  | clear response history                                                                          |
-| `httpyac.removeHistory` | remove history entry                                                                            |
+| Command | Description |
+| --- | --- |
+| `httpyac.send` | Send request at cursor |
+| `httpyac.sendAll` | Send all requests in file |
+| `httpyac.sendSelected` | Send selected requests |
+| `httpyac.resend` | Resend last request |
+| `httpyac.show` | Show cached response |
+| `httpyac.viewHeader` | Show headers and timings |
+| `httpyac.save` | Save response to file |
+| `httpyac.generateCode` | Generate request code |
+| `httpyac.toggle-env` | Toggle environment |
+| `httpyac.showHistory` | Open history view |
+| `httpyac.clearHistory` | Clear history |
+| `httpyac.openRequestEditor` | Open request editor |
+
+> Search `httpyac` in the command palette for the full list.
 
 ## Keybindings
 
-keybindings are only active in files with language http
+Active only in `http` / `rest` files:
 
-| Name                 | Description                                     | keybindings  |
-| -------------------- | ----------------------------------------------- | ------------ |
-| `httpyac.send`       | send request in ActiveTextEditor in active line | `ctrl+alt+r` |
-| `httpyac.resend`     | resend last request                             | `ctrl+alt+l` |
-| `httpyac.toggle-env` | toggle environment of active text document      | `ctrl+alt+e` |
+| Command | Windows/Linux | macOS |
+| --- | --- | --- |
+| `httpyac.send` | `Ctrl+Alt+R` | `Cmd+Alt+R` |
+| `httpyac.resend` | `Ctrl+Alt+L` | `Cmd+Alt+L` |
+| `httpyac.toggle-env` | `Ctrl+Alt+E` | `Cmd+Alt+E` |
+| `httpyac.generateCode` | `Ctrl+Alt+G` | `Cmd+Alt+G` |
 
 ## Settings
 
-#### Request Settings
+| Setting | Description | Default |
+| --- | --- | --- |
+| `httpyac.requestDefaultHeaders` | Default request headers | `{ "User-Agent": "httpyac" }` |
+| `httpyac.cookieJarEnabled` | Enable CookieJar | `true` |
+| `httpyac.envDirName` | Environment folder name | `"env"` |
+| `httpyac.responseViewMode` | Response view mode | `preview` |
+| `httpyac.logLevel` | Output log level | `warn` |
+| `httpyac.maxHistoryItems` | Max history entries | `50` |
 
-| Name                            | Description                                                                                                                            | Default                      |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `httpyac.requestDefaultHeaders` | default request headers if not overwritten                                                                                             | `{ "User-Agent": "httpyac"}` |
-| `httpyac.requestGotOptions`     | [request options](https://github.com/sindresorhus/got/blob/main/source/types.ts#L96) used for [got](https://www.npmjs.com/package/got) | -                            |
-| `httpyac.cookieJarEnabled`      | is [CookieJar](https://github.com/salesforce/tough-cookie#cookiejarstore-options) support enabled                                      | `true` or options            |
+> Search `httpyac` in VS Code Settings for the full list.
 
-> HttpYac extension uses the proxy settings of Visual Studio Code (`http.proxy`).
+## Compatibility & Notes
 
-#### Environment Settings
+- Requires VS Code `1.91.0+`.
+- JavaScript execution is disabled in untrusted workspaces (Workspace Trust).
+- Response history and cache are stored under `.httpyac` in the workspace.
 
-| Name                                 | Description                                           | Default            |
-| ------------------------------------ | ----------------------------------------------------- | ------------------ |
-| `httpyac.environmentSelectedOnStart` | list of selected environments on startup              | -                  |
-| `httpyac.environmentPickMany`        | allow picking many environments at the same time      | `true`             |
-| `httpyac.environmentVariables`       | environment variables                                 | `{ "$shared":{} }` |
-| `httpyac.envDirName`                 | relative or absolute path to folder with dotenv files | `"env"`            |
+## Relationship to Upstream
 
-#### Response View Settings
-
-| Name                                | Description                                                                                                                                                             | Default                                                 |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `httpyac.responseViewHeader`        | headers (e.g. content-type), test results (e.g. tests.failed), timings (e.g. timings.total) and meta data (e.g. meta.size) visible in code lens of response             | `[ "timings.total", "content-type", "content-length" ]` |
-| `httpyac.responseViewMode`          | response view mode of file                                                                                                                                              | `preview`                                               |
-| `httpyac.responseViewPrettyPrint`   | response view pretty prints content. Pretty print is only working, if editor receives focus (vscode limitation)                                                         | `true`                                                  |
-| `httpyac.responseViewPreserveFocus` | response view will not take focus after receiving response                                                                                                              | `true`                                                  |
-| `httpyac.responseViewColumn`        | response preview column option (current, beside)                                                                                                                        | `beside`                                                |
-| `httpyac.responseViewLanguageMap`   | mimetype to [languageId](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers) map for response view (only used if not in preview mode) | `beside`                                                |
-
-#### httpYac Extension
-
-| Name                              | Description                                             | Default |
-| --------------------------------- | ------------------------------------------------------- | ------- |
-| `httpyac.showGutterIcon`          | show gutter icon to highlight request lines             | `true`  |
-| `httpyac.useMethodInSendCodeLens` | use request method in send code lens                    | `false` |
-| `httpyac.logLevel`                | log level of output channel                             | `warn`  |
-| `httpyac.maxHistoryItems`         | number of max history items                             | `50`    |
+This project is a UI-extended fork of the upstream `httpyac` extension. Thanks to the upstream maintainers and contributors.
 
 ## License
 
 [MIT License](LICENSE)
 
-## Change Log
+## Changelog
 
-See CHANGELOG [here](CHANGELOG.md)
+See [CHANGELOG](CHANGELOG.md).
