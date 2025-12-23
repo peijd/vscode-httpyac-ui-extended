@@ -970,6 +970,28 @@
           "scope": "window",
           "description": "The location at which progress should show."
         },
+        "httpyac.collectionsSort": {
+          "type": "string",
+          "enum": [
+            "created",
+            "modified",
+            "name",
+            "path"
+          ],
+          "default": "created",
+          "scope": "window",
+          "description": "Sorting mode for Collections in the sidebar."
+        },
+        "httpyac.collectionsSortOrder": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "asc",
+          "scope": "window",
+          "description": "Sorting order for Collections in the sidebar."
+        },
         "httpyac.testExplorerSupport": {
           "type": "array",
           "items": {

@@ -114,6 +114,8 @@ export interface AppConfig {
   testRunAlwaysUseEnv?: Array<string>;
   testRunRepeatTimes?: number;
   logResetOutputchannel?: boolean;
+  collectionsSort?: 'created' | 'modified' | 'name' | 'path';
+  collectionsSortOrder?: 'asc' | 'desc';
 }
 
 export function getConfigSetting(): AppConfig {

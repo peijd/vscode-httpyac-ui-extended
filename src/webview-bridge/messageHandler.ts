@@ -26,6 +26,15 @@ import {
 import { toUri } from '../io';
 import { ResponseItem } from '../view';
 
+type CollectionSortMode = 'created' | 'modified' | 'name' | 'path';
+type CollectionSortOrder = 'asc' | 'desc';
+type FileSortMeta = {
+  created: number;
+  modified: number;
+  name: string;
+  path: string;
+};
+
 export class WebviewMessageHandler implements vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
   private readonly disposables: vscode.Disposable[];
@@ -1026,6 +1035,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
     const httpFiles = await this.getWorkspaceHttpFiles();
     const roots: CollectionItem[] = [];
     const folderMap = new Map<string, CollectionItem>();
+    const fileSortMeta = new Map<string, FileSortMeta>();
+    const sortMode = this.getCollectionsSortMode();
+    const sortOrder = this.getCollectionsSortOrder();
 
     for (const httpFile of httpFiles) {
       const uri = toUri(httpFile.fileName);
@@ -1039,6 +1051,8 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const relativePath = vscode.workspace.asRelativePath(uri, false);
       const parts = relativePath.split(/[/\\]/u);
       const fileName = parts.pop() || uri.toString();
+      const fileMeta = await this.getFileSortMeta(uri, fileName, relativePath);
+      fileSortMeta.set(uri.fsPath, fileMeta);
       const parentChildren = this.ensureFolder(roots, folderMap, parts);
 
       const requestItems = httpRegions
@@ -1059,7 +1073,115 @@ export class WebviewMessageHandler implements vscode.Disposable {
       parentChildren.push(fileItem);
     }
 
+    this.sortCollectionTree(roots, sortMode, sortOrder, fileSortMeta);
     return roots;
+  }
+
+  private getCollectionsSortMode(): CollectionSortMode {
+    const config = getConfigSetting();
+    if (
+      config.collectionsSort === 'modified' ||
+      config.collectionsSort === 'name' ||
+      config.collectionsSort === 'path'
+    ) {
+      return config.collectionsSort;
+    }
+    return 'created';
+  }
+
+  private getCollectionsSortOrder(): CollectionSortOrder {
+    const config = getConfigSetting();
+    return config.collectionsSortOrder === 'desc' ? 'desc' : 'asc';
+  }
+
+  private async getFileSortMeta(uri: vscode.Uri, fileName: string, relativePath: string): Promise<FileSortMeta> {
+    let created = 0;
+    let modified = 0;
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      created = stat.ctime || stat.mtime || 0;
+      modified = stat.mtime || stat.ctime || 0;
+    } catch (error) {
+      console.warn('Failed to stat http file:', uri.fsPath, error);
+    }
+    return {
+      created,
+      modified,
+      name: fileName.toLowerCase(),
+      path: relativePath.toLowerCase(),
+    };
+  }
+
+  private sortCollectionTree(
+    items: CollectionItem[],
+    sortMode: CollectionSortMode,
+    sortOrder: CollectionSortOrder,
+    fileSortMeta: Map<string, FileSortMeta>
+  ): void {
+    const valueCache = new Map<string, number | string>();
+
+    const getSortValue = (item: CollectionItem): number | string => {
+      const cached = valueCache.get(item.id);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      let value: number | string;
+      if (sortMode === 'name') {
+        value = item.name.toLowerCase();
+      } else if (sortMode === 'path') {
+        if (item.httpFilePath) {
+          value = fileSortMeta.get(item.httpFilePath)?.path || item.name.toLowerCase();
+        } else {
+          value = item.id.toLowerCase();
+        }
+      } else {
+        const meta = item.httpFilePath ? fileSortMeta.get(item.httpFilePath) : undefined;
+        if (meta) {
+          value = sortMode === 'modified' ? meta.modified : meta.created;
+        } else if (item.children?.length) {
+          const childValues = item.children
+            .map(child => getSortValue(child))
+            .filter((childValue): childValue is number => typeof childValue === 'number');
+          if (childValues.length === 0) {
+            value = 0;
+          } else {
+            value = sortOrder === 'desc' ? Math.max(...childValues) : Math.min(...childValues);
+          }
+        } else {
+          value = 0;
+        }
+      }
+
+      valueCache.set(item.id, value);
+      return value;
+    };
+
+    const compareItems = (left: CollectionItem, right: CollectionItem): number => {
+      const leftValue = getSortValue(left);
+      const rightValue = getSortValue(right);
+      let result: number;
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        result = leftValue - rightValue;
+      } else {
+        result = String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortOrder === 'desc') {
+        result = -result;
+      }
+      if (result !== 0) {
+        return result;
+      }
+      return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
+    };
+
+    items.sort(compareItems);
+
+    for (const item of items) {
+      if (item.type === 'folder' && item.children?.length && !item.httpFilePath) {
+        this.sortCollectionTree(item.children, sortMode, sortOrder, fileSortMeta);
+      }
+    }
   }
 
   private async getWorkspaceHttpFiles(): Promise<httpyac.HttpFile[]> {
