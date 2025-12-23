@@ -1028,23 +1028,22 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const fileName = parts.pop() || uri.toString();
       const parentChildren = this.ensureFolder(roots, folderMap, parts);
 
-      if (httpRegions.length > 1) {
-        const folderItem: CollectionItem = {
-          id: uri.toString(),
-          name: fileName,
-          type: 'folder',
-          children: httpRegions
-            .map((region, index) => this.createRequestItem(region, uri, `${uri.toString()}#${index}`))
-            .filter((item): item is CollectionItem => !!item),
-          httpFilePath: uri.fsPath,
-        };
-        parentChildren.push(folderItem);
-      } else {
-        const requestItem = this.createRequestItem(httpRegions[0], uri, uri.toString());
-        if (requestItem) {
-          parentChildren.push(requestItem);
-        }
+      const requestItems = httpRegions
+        .map((region, index) => this.createRequestItem(region, uri, `${uri.toString()}#${index}`))
+        .filter((item): item is CollectionItem => !!item);
+
+      if (requestItems.length === 0) {
+        continue;
       }
+
+      const fileItem: CollectionItem = {
+        id: uri.toString(),
+        name: fileName,
+        type: 'folder',
+        children: requestItems,
+        httpFilePath: uri.fsPath,
+      };
+      parentChildren.push(fileItem);
     }
 
     return roots;
