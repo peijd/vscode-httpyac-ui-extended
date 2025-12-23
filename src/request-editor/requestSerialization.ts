@@ -517,7 +517,7 @@ export async function parseHttpFile(content: string, _filePath: string): Promise
     if (bodyStartIndex > 0 && bodyStartIndex < lines.length) {
       bodyContent = lines.slice(bodyStartIndex).join('\n').trim();
       // Remove script blocks
-      bodyContent = bodyContent.replace(/>\s*{%[\s\S]*?%}/gu, '').trim();
+      bodyContent = bodyContent.replace(/>\s*\{%\s*[\s\S]*?%\}/gu, '').trim();
     }
 
     // Determine body type from content-type header

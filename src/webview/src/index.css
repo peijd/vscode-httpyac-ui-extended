@@ -154,6 +154,96 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.runner-entry {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-1);
+  overflow: hidden;
+}
+
+.runner-entry + .runner-entry {
+  margin-top: 8px;
+}
+
+.runner-entry-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.runner-entry-summary::-webkit-details-marker {
+  display: none;
+}
+
+.runner-entry[open] .runner-entry-summary {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.runner-entry-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 10px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.runner-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+}
+
+.runner-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runner-kv-title {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.runner-pre {
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.runner-filter {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-2);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  transition: all var(--ui-fast);
+}
+
+.runner-filter:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.runner-filter-active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
 /* Method colors (text only, no background) */
 .method-get { color: #61affe; }
 .method-post { color: #49cc90; }

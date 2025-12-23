@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as httpyac from 'httpyac';
 import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
-import { getEnvironmentConfig } from '../config';
+import { commands, getConfigSetting, getEnvironmentConfig } from '../config';
 import { StoreController } from '../provider/storeController';
 import type {
   Message,
@@ -12,6 +12,9 @@ import type {
   HistoryItem,
   KeyValue,
   TestResult,
+  BatchRunRequest,
+  BatchRunSummary,
+  BatchRunFileResult,
 } from './messageTypes';
 import {
   computeHttpRegionSourceHash,
@@ -23,9 +26,19 @@ import {
 import { toUri } from '../io';
 import { ResponseItem } from '../view';
 
+type CollectionSortMode = 'created' | 'modified' | 'name' | 'path';
+type CollectionSortOrder = 'asc' | 'desc';
+type FileSortMeta = {
+  created: number;
+  modified: number;
+  name: string;
+  path: string;
+};
+
 export class WebviewMessageHandler implements vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
   private readonly disposables: vscode.Disposable[];
+  private readonly runnerResults: BatchRunSummary[] = [];
 
   constructor(
     private readonly documentStore: DocumentStore,
@@ -108,11 +121,18 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'attachToHttpFile':
         await this.handleAttachToHttpFile(message.payload as HttpRequest, webview);
         break;
+      case 'runCollection':
+        await this.handleRunCollection(message.payload as BatchRunRequest);
+        break;
+      case 'getRunnerResults':
+        await this.broadcastRunnerResults(webview);
+        break;
       case 'ready':
         await Promise.all([
           this.broadcastEnvironmentState(webview),
           this.broadcastHistory(webview),
           this.broadcastCollections(webview),
+          this.broadcastRunnerResults(webview),
         ]);
         break;
       default:
@@ -539,6 +559,151 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleRunCollection(payload: BatchRunRequest): Promise<void> {
+    const filePaths = Array.from(new Set(payload?.filePaths || [])).filter(path => !!path);
+    if (filePaths.length === 0) {
+      vscode.window.showWarningMessage('No .http files to run.');
+      return;
+    }
+
+    const label = payload?.label?.trim() || 'Collection';
+    const startedAt = Date.now();
+    const results: BatchRunFileResult[] = [];
+    const counters = {
+      totalRequests: 0,
+      failedRequests: 0,
+      totalTests: 0,
+      failedTests: 0,
+    };
+
+    const config = getConfigSetting();
+    const progressLocation =
+      config.progressDefaultLocation === 'window'
+        ? vscode.ProgressLocation.Window
+        : vscode.ProgressLocation.Notification;
+
+    await vscode.window.withProgress(
+      {
+        location: progressLocation,
+        cancellable: true,
+        title: `Runner: ${label}`,
+      },
+      async (progress, token) => {
+        const increment = 100 / filePaths.length;
+        for (const filePath of filePaths) {
+          if (token.isCancellationRequested) {
+            break;
+          }
+          const uri = vscode.Uri.file(filePath);
+          const relativePath = vscode.workspace.asRelativePath(uri, false);
+          progress.report({ message: `Running ${relativePath}`, increment });
+
+          const fileResult: BatchRunFileResult = {
+            filePath,
+            durationMs: 0,
+            entries: [],
+          };
+
+          const fileStart = Date.now();
+          try {
+            const httpFile = await this.documentStore.getWithUri(uri);
+            const context: httpyac.HttpFileSendContext = {
+              httpFile,
+            };
+            context.progress = {
+              divider: 1,
+              isCanceled: () => token.isCancellationRequested,
+              register: (event: () => void) => {
+                const dispose = token.onCancellationRequested(event);
+                return () => dispose.dispose();
+              },
+              report: data => progress.report(data),
+            };
+            context.logResponse = this.createRunnerLogResponse(fileResult, filePath, counters);
+
+            await this.documentStore.send(context);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            fileResult.error = message;
+          } finally {
+            fileResult.durationMs = Date.now() - fileStart;
+            results.push(fileResult);
+          }
+        }
+      }
+    );
+
+    const finishedAt = Date.now();
+    const summary: BatchRunSummary = {
+      label,
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt - startedAt,
+      totalRequests: counters.totalRequests,
+      failedRequests: counters.failedRequests,
+      totalTests: counters.totalTests,
+      failedTests: counters.failedTests,
+      files: results,
+    };
+
+    this.runnerResults.unshift(summary);
+    this.runnerResults.splice(20);
+    await this.broadcastRunnerResults();
+
+    await vscode.commands.executeCommand(commands.openRunnerResults);
+
+    const message = `Runner finished: ${counters.totalRequests} requests, ${counters.failedRequests} failed.`;
+    await vscode.window.showInformationMessage(message);
+  }
+
+  private createRunnerLogResponse(
+    fileResult: BatchRunFileResult,
+    filePath: string,
+    counters: {
+      totalRequests: number;
+      failedRequests: number;
+      totalTests: number;
+      failedTests: number;
+    }
+  ): (response?: httpyac.HttpResponse, httpRegion?: httpyac.HttpRegion) => Promise<void> {
+    return async (response, httpRegion) => {
+      if (!response || !httpRegion) {
+        return;
+      }
+      const testResults = httpRegion.testResults || [];
+      const testFailedCount = testResults.filter(result =>
+        [httpyac.TestResultStatus.ERROR, httpyac.TestResultStatus.FAILED].includes(result.status)
+      ).length;
+      const testTotalCount = testResults.length;
+      const durationMs = response.timings?.total || 0;
+      const status = response.statusCode || 0;
+      const isSuccess = status > 0 && status < 400 && testFailedCount === 0;
+
+      counters.totalRequests += 1;
+      if (!isSuccess) {
+        counters.failedRequests += 1;
+      }
+      counters.totalTests += testTotalCount;
+      counters.failedTests += testFailedCount;
+
+      fileResult.entries.push({
+        filePath,
+        name: getHttpRegionDisplayName(httpRegion) || httpRegion.symbol.name,
+        method: httpRegion.request?.method,
+        url: httpRegion.request?.url,
+        status,
+        statusText: response.statusMessage,
+        durationMs,
+        testTotal: testTotalCount,
+        testFailed: testFailedCount,
+        request: convertHttpRegionToRequest(httpRegion) || undefined,
+        response: this.toHttpResponse(response, httpRegion.testResults),
+      });
+
+      await this.responseStore.add(response, httpRegion, false);
+    };
+  }
+
   private async appendRequestToFile(
     request: HttpRequest,
     targetUri: vscode.Uri,
@@ -696,6 +861,16 @@ export class WebviewMessageHandler implements vscode.Disposable {
       {
         type: 'historyUpdated',
         payload: items,
+      },
+      target
+    );
+  }
+
+  private async broadcastRunnerResults(target?: vscode.Webview): Promise<void> {
+    this.postMessage(
+      {
+        type: 'runnerResultsUpdated',
+        payload: this.runnerResults,
       },
       target
     );
@@ -860,6 +1035,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
     const httpFiles = await this.getWorkspaceHttpFiles();
     const roots: CollectionItem[] = [];
     const folderMap = new Map<string, CollectionItem>();
+    const fileSortMeta = new Map<string, FileSortMeta>();
+    const sortMode = this.getCollectionsSortMode();
+    const sortOrder = this.getCollectionsSortOrder();
 
     for (const httpFile of httpFiles) {
       const uri = toUri(httpFile.fileName);
@@ -873,28 +1051,137 @@ export class WebviewMessageHandler implements vscode.Disposable {
       const relativePath = vscode.workspace.asRelativePath(uri, false);
       const parts = relativePath.split(/[/\\]/u);
       const fileName = parts.pop() || uri.toString();
+      const fileMeta = await this.getFileSortMeta(uri, fileName, relativePath);
+      fileSortMeta.set(uri.fsPath, fileMeta);
       const parentChildren = this.ensureFolder(roots, folderMap, parts);
 
-      if (httpRegions.length > 1) {
-        const folderItem: CollectionItem = {
-          id: uri.toString(),
-          name: fileName,
-          type: 'folder',
-          children: httpRegions
-            .map((region, index) => this.createRequestItem(region, uri, `${uri.toString()}#${index}`))
-            .filter((item): item is CollectionItem => !!item),
-          httpFilePath: uri.fsPath,
-        };
-        parentChildren.push(folderItem);
-      } else {
-        const requestItem = this.createRequestItem(httpRegions[0], uri, uri.toString());
-        if (requestItem) {
-          parentChildren.push(requestItem);
-        }
+      const requestItems = httpRegions
+        .map((region, index) => this.createRequestItem(region, uri, `${uri.toString()}#${index}`))
+        .filter((item): item is CollectionItem => !!item);
+
+      if (requestItems.length === 0) {
+        continue;
       }
+
+      const fileItem: CollectionItem = {
+        id: uri.toString(),
+        name: fileName,
+        type: 'folder',
+        children: requestItems,
+        httpFilePath: uri.fsPath,
+      };
+      parentChildren.push(fileItem);
     }
 
+    this.sortCollectionTree(roots, sortMode, sortOrder, fileSortMeta);
     return roots;
+  }
+
+  private getCollectionsSortMode(): CollectionSortMode {
+    const config = getConfigSetting();
+    if (
+      config.collectionsSort === 'modified' ||
+      config.collectionsSort === 'name' ||
+      config.collectionsSort === 'path'
+    ) {
+      return config.collectionsSort;
+    }
+    return 'created';
+  }
+
+  private getCollectionsSortOrder(): CollectionSortOrder {
+    const config = getConfigSetting();
+    return config.collectionsSortOrder === 'desc' ? 'desc' : 'asc';
+  }
+
+  private async getFileSortMeta(uri: vscode.Uri, fileName: string, relativePath: string): Promise<FileSortMeta> {
+    let created = 0;
+    let modified = 0;
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      created = stat.ctime || stat.mtime || 0;
+      modified = stat.mtime || stat.ctime || 0;
+    } catch (error) {
+      console.warn('Failed to stat http file:', uri.fsPath, error);
+    }
+    return {
+      created,
+      modified,
+      name: fileName.toLowerCase(),
+      path: relativePath.toLowerCase(),
+    };
+  }
+
+  private sortCollectionTree(
+    items: CollectionItem[],
+    sortMode: CollectionSortMode,
+    sortOrder: CollectionSortOrder,
+    fileSortMeta: Map<string, FileSortMeta>
+  ): void {
+    const valueCache = new Map<string, number | string>();
+
+    const getSortValue = (item: CollectionItem): number | string => {
+      const cached = valueCache.get(item.id);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      let value: number | string;
+      if (sortMode === 'name') {
+        value = item.name.toLowerCase();
+      } else if (sortMode === 'path') {
+        if (item.httpFilePath) {
+          value = fileSortMeta.get(item.httpFilePath)?.path || item.name.toLowerCase();
+        } else {
+          value = item.id.toLowerCase();
+        }
+      } else {
+        const meta = item.httpFilePath ? fileSortMeta.get(item.httpFilePath) : undefined;
+        if (meta) {
+          value = sortMode === 'modified' ? meta.modified : meta.created;
+        } else if (item.children?.length) {
+          const childValues = item.children
+            .map(child => getSortValue(child))
+            .filter((childValue): childValue is number => typeof childValue === 'number');
+          if (childValues.length === 0) {
+            value = 0;
+          } else {
+            value = sortOrder === 'desc' ? Math.max(...childValues) : Math.min(...childValues);
+          }
+        } else {
+          value = 0;
+        }
+      }
+
+      valueCache.set(item.id, value);
+      return value;
+    };
+
+    const compareItems = (left: CollectionItem, right: CollectionItem): number => {
+      const leftValue = getSortValue(left);
+      const rightValue = getSortValue(right);
+      let result: number;
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        result = leftValue - rightValue;
+      } else {
+        result = String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortOrder === 'desc') {
+        result = -result;
+      }
+      if (result !== 0) {
+        return result;
+      }
+      return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' });
+    };
+
+    items.sort(compareItems);
+
+    for (const item of items) {
+      if (item.type === 'folder' && item.children?.length && !item.httpFilePath) {
+        this.sortCollectionTree(item.children, sortMode, sortOrder, fileSortMeta);
+      }
+    }
   }
 
   private async getWorkspaceHttpFiles(): Promise<httpyac.HttpFile[]> {

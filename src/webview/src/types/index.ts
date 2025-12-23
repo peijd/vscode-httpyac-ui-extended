@@ -103,6 +103,45 @@ export interface CollectionItem {
   httpFilePath?: string;
 }
 
+export interface BatchRunRequest {
+  label?: string;
+  filePaths: string[];
+}
+
+export interface BatchRunEntry {
+  filePath: string;
+  name: string;
+  method?: string;
+  url?: string;
+  status?: number;
+  statusText?: string;
+  durationMs?: number;
+  testTotal: number;
+  testFailed: number;
+  error?: string;
+  request?: HttpRequest;
+  response?: HttpResponse;
+}
+
+export interface BatchRunFileResult {
+  filePath: string;
+  durationMs: number;
+  entries: BatchRunEntry[];
+  error?: string;
+}
+
+export interface BatchRunSummary {
+  label: string;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  totalRequests: number;
+  failedRequests: number;
+  totalTests: number;
+  failedTests: number;
+  files: BatchRunFileResult[];
+}
+
 // Environment
 export interface Environment {
   name: string;
@@ -121,6 +160,7 @@ export interface AppState {
   activeEnvironments: string[];
   history: HistoryItem[];
   collections: CollectionItem[];
+  runnerResults: BatchRunSummary[];
   error: string | null;
 }
 
@@ -146,6 +186,9 @@ export type MessageType =
   | 'openHttpFile'
   | 'openSourceLocation'
   | 'attachToHttpFile'
+  | 'runCollection'
+  | 'getRunnerResults'
+  | 'runnerResultsUpdated'
   | 'setRequest'
   | 'showNotification'
   | 'ready';

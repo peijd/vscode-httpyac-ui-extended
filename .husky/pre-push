@@ -1,0 +1,13 @@
+#!/bin/sh
+
+echo "Running pre-push checks..."
+
+# Run lint (format, eslint, lockfile-lint, tsc --noEmit)
+echo "Running lint..."
+npm run lint || exit 1
+
+# Run compile (build webview and bundle extension)
+echo "Running compile..."
+npm run compile || exit 1
+
+echo "Pre-push checks passed!"
