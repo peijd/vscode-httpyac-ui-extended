@@ -560,10 +560,12 @@ export class WebviewMessageHandler implements vscode.Disposable {
     const label = payload?.label?.trim() || 'Collection';
     const startedAt = Date.now();
     const results: BatchRunFileResult[] = [];
-    let totalRequests = 0;
-    let failedRequests = 0;
-    let totalTests = 0;
-    let failedTests = 0;
+    const counters = {
+      totalRequests: 0,
+      failedRequests: 0,
+      totalTests: 0,
+      failedTests: 0,
+    };
 
     const config = getConfigSetting();
     const progressLocation =
@@ -579,12 +581,10 @@ export class WebviewMessageHandler implements vscode.Disposable {
       },
       async (progress, token) => {
         const increment = 100 / filePaths.length;
-        let index = 0;
         for (const filePath of filePaths) {
           if (token.isCancellationRequested) {
             break;
           }
-          index += 1;
           const uri = vscode.Uri.file(filePath);
           const relativePath = vscode.workspace.asRelativePath(uri, false);
           progress.report({ message: `Running ${relativePath}`, increment });
@@ -610,42 +610,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
               },
               report: data => progress.report(data),
             };
-            context.logResponse = async (response, httpRegion) => {
-              if (!response || !httpRegion) {
-                return;
-              }
-              const testResults = httpRegion.testResults || [];
-              const testFailedCount = testResults.filter(result =>
-                [httpyac.TestResultStatus.ERROR, httpyac.TestResultStatus.FAILED].includes(result.status)
-              ).length;
-              const testTotalCount = testResults.length;
-              const durationMs = response.timings?.total || 0;
-              const status = response.statusCode || 0;
-              const isSuccess = status > 0 && status < 400 && testFailedCount === 0;
-
-              totalRequests += 1;
-              if (!isSuccess) {
-                failedRequests += 1;
-              }
-              totalTests += testTotalCount;
-              failedTests += testFailedCount;
-
-              fileResult.entries.push({
-                filePath,
-                name: getHttpRegionDisplayName(httpRegion) || httpRegion.symbol.name,
-                method: httpRegion.request?.method,
-                url: httpRegion.request?.url,
-                status,
-                statusText: response.statusMessage,
-                durationMs,
-                testTotal: testTotalCount,
-                testFailed: testFailedCount,
-                request: convertHttpRegionToRequest(httpRegion) || undefined,
-                response: this.toHttpResponse(response, httpRegion.testResults),
-              });
-
-              await this.responseStore.add(response, httpRegion, false);
-            };
+            context.logResponse = this.createRunnerLogResponse(fileResult, filePath, counters);
 
             await this.documentStore.send(context);
           } catch (error) {
@@ -665,10 +630,10 @@ export class WebviewMessageHandler implements vscode.Disposable {
       startedAt,
       finishedAt,
       durationMs: finishedAt - startedAt,
-      totalRequests,
-      failedRequests,
-      totalTests,
-      failedTests,
+      totalRequests: counters.totalRequests,
+      failedRequests: counters.failedRequests,
+      totalTests: counters.totalTests,
+      failedTests: counters.failedTests,
       files: results,
     };
 
@@ -678,8 +643,56 @@ export class WebviewMessageHandler implements vscode.Disposable {
 
     await vscode.commands.executeCommand(commands.openRunnerResults);
 
-    const message = `Runner finished: ${totalRequests} requests, ${failedRequests} failed.`;
+    const message = `Runner finished: ${counters.totalRequests} requests, ${counters.failedRequests} failed.`;
     await vscode.window.showInformationMessage(message);
+  }
+
+  private createRunnerLogResponse(
+    fileResult: BatchRunFileResult,
+    filePath: string,
+    counters: {
+      totalRequests: number;
+      failedRequests: number;
+      totalTests: number;
+      failedTests: number;
+    }
+  ): (response?: httpyac.HttpResponse, httpRegion?: httpyac.HttpRegion) => Promise<void> {
+    return async (response, httpRegion) => {
+      if (!response || !httpRegion) {
+        return;
+      }
+      const testResults = httpRegion.testResults || [];
+      const testFailedCount = testResults.filter(result =>
+        [httpyac.TestResultStatus.ERROR, httpyac.TestResultStatus.FAILED].includes(result.status)
+      ).length;
+      const testTotalCount = testResults.length;
+      const durationMs = response.timings?.total || 0;
+      const status = response.statusCode || 0;
+      const isSuccess = status > 0 && status < 400 && testFailedCount === 0;
+
+      counters.totalRequests += 1;
+      if (!isSuccess) {
+        counters.failedRequests += 1;
+      }
+      counters.totalTests += testTotalCount;
+      counters.failedTests += testFailedCount;
+
+      fileResult.entries.push({
+        filePath,
+        name: getHttpRegionDisplayName(httpRegion) || httpRegion.symbol.name,
+        method: httpRegion.request?.method,
+        url: httpRegion.request?.url,
+        status,
+        statusText: response.statusMessage,
+        durationMs,
+        testTotal: testTotalCount,
+        testFailed: testFailedCount,
+        request: convertHttpRegionToRequest(httpRegion) || undefined,
+        response: this.toHttpResponse(response, httpRegion.testResults),
+      });
+
+      await this.responseStore.add(response, httpRegion, false);
+    };
   }
 
   private async appendRequestToFile(

@@ -1535,7 +1535,7 @@
     "lockfile-lint": "lockfile-lint --path package-lock.json --validate-https --allowed-hosts npm --validate-checksum --validate-integrity",
     "package": "npx vsce package",
     "precommit": "npm run lint",
-    "prepare": "husky install",
+    "prepare": "husky",
     "start": "npm run watch",
     "tsc-watch": "tsc --watch",
     "tsc": "tsc --b",
