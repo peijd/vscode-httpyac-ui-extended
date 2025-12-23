@@ -55,6 +55,7 @@ export function activate(context: vscode.ExtensionContext): HttpYacExtensionApi 
       vscode.window.registerWebviewViewProvider(provider.WebviewSidebarProvider.viewType, webviewSidebarProvider),
       // Register webview panel commands
       ...provider.WebviewPanelProvider.registerCommands(context, webviewMessageHandler),
+      ...provider.RunnerPanelProvider.registerCommands(context, webviewMessageHandler),
     ]
   );
   vscode.commands.executeCommand(

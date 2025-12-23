@@ -1,7 +1,15 @@
 import { useEffect, useCallback } from 'react';
 import { addMessageListener, postMessage } from '@/lib/vscode';
 import { useStore } from './useStore';
-import type { Message, HttpRequest, HttpResponse, HistoryItem, CollectionItem } from '@/types';
+import type {
+  Message,
+  HttpRequest,
+  HttpResponse,
+  HistoryItem,
+  CollectionItem,
+  BatchRunRequest,
+  BatchRunSummary,
+} from '@/types';
 import { generateId } from '@/lib/utils';
 
 export function useVsCodeMessages() {
@@ -16,6 +24,7 @@ export function useVsCodeMessages() {
     setActiveEnvironments,
     setHistory,
     setCollections,
+    setRunnerResults,
   } = useStore();
 
   // Handle incoming messages from VSCode
@@ -59,6 +68,10 @@ export function useVsCodeMessages() {
           setCollections(message.payload as CollectionItem[]);
           break;
 
+        case 'runnerResultsUpdated':
+          setRunnerResults(message.payload as BatchRunSummary[]);
+          break;
+
         case 'setRequest':
           console.log('[webview] Received setRequest:', message.payload);
           setCurrentRequest(message.payload as HttpRequest);
@@ -79,6 +92,7 @@ export function useVsCodeMessages() {
     setActiveEnvironments,
     setHistory,
     setCollections,
+    setRunnerResults,
     setCurrentRequest,
   ]);
 
@@ -175,6 +189,15 @@ export function useVsCodeMessages() {
     postMessage('attachToHttpFile', request);
   }, []);
 
+  const runCollection = useCallback((payload: BatchRunRequest) => {
+    postMessage('runCollection', payload);
+  }, []);
+
+  const requestRunnerResults = useCallback(() => {
+    postMessage('getRunnerResults');
+  }, []);
+
+
   // Notify VSCode that webview is ready
   const notifyReady = useCallback(() => {
     postMessage('ready');
@@ -195,6 +218,8 @@ export function useVsCodeMessages() {
     openHttpFile,
     openSourceLocation,
     attachToHttpFile,
+    runCollection,
+    requestRunnerResults,
     notifyReady,
   };
 }

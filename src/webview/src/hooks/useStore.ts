@@ -1,5 +1,14 @@
 import { create } from 'zustand';
-import type { AppState, HttpRequest, HttpResponse, Environment, HistoryItem, CollectionItem, KeyValue } from '@/types';
+import type {
+  AppState,
+  HttpRequest,
+  HttpResponse,
+  Environment,
+  HistoryItem,
+  CollectionItem,
+  KeyValue,
+  BatchRunSummary,
+} from '@/types';
 import { generateId } from '@/lib/utils';
 
 // Create a default empty request
@@ -89,6 +98,9 @@ interface StoreActions {
 
   // Collections
   setCollections: (collections: CollectionItem[]) => void;
+
+  // Runner results
+  setRunnerResults: (results: BatchRunSummary[]) => void;
 }
 
 type Store = AppState & StoreActions;
@@ -104,6 +116,7 @@ export const useStore = create<Store>(set => ({
   activeEnvironments: [],
   history: [],
   collections: [],
+  runnerResults: [],
   error: null,
 
   // Request actions
@@ -264,4 +277,7 @@ export const useStore = create<Store>(set => ({
 
   // Collections
   setCollections: collections => set({ collections }),
+
+  // Runner results
+  setRunnerResults: runnerResults => set({ runnerResults }),
 }));

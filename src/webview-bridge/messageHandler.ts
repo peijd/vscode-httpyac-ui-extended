@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as httpyac from 'httpyac';
 import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
-import { getEnvironmentConfig } from '../config';
+import { commands, getConfigSetting, getEnvironmentConfig } from '../config';
 import { StoreController } from '../provider/storeController';
 import type {
   Message,
@@ -12,6 +12,9 @@ import type {
   HistoryItem,
   KeyValue,
   TestResult,
+  BatchRunRequest,
+  BatchRunSummary,
+  BatchRunFileResult,
 } from './messageTypes';
 import {
   computeHttpRegionSourceHash,
@@ -26,6 +29,7 @@ import { ResponseItem } from '../view';
 export class WebviewMessageHandler implements vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
   private readonly disposables: vscode.Disposable[];
+  private readonly runnerResults: BatchRunSummary[] = [];
 
   constructor(
     private readonly documentStore: DocumentStore,
@@ -108,11 +112,18 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'attachToHttpFile':
         await this.handleAttachToHttpFile(message.payload as HttpRequest, webview);
         break;
+      case 'runCollection':
+        await this.handleRunCollection(message.payload as BatchRunRequest);
+        break;
+      case 'getRunnerResults':
+        await this.broadcastRunnerResults(webview);
+        break;
       case 'ready':
         await Promise.all([
           this.broadcastEnvironmentState(webview),
           this.broadcastHistory(webview),
           this.broadcastCollections(webview),
+          this.broadcastRunnerResults(webview),
         ]);
         break;
       default:
@@ -539,6 +550,138 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleRunCollection(payload: BatchRunRequest): Promise<void> {
+    const filePaths = Array.from(new Set(payload?.filePaths || [])).filter(path => !!path);
+    if (filePaths.length === 0) {
+      vscode.window.showWarningMessage('No .http files to run.');
+      return;
+    }
+
+    const label = payload?.label?.trim() || 'Collection';
+    const startedAt = Date.now();
+    const results: BatchRunFileResult[] = [];
+    let totalRequests = 0;
+    let failedRequests = 0;
+    let totalTests = 0;
+    let failedTests = 0;
+
+    const config = getConfigSetting();
+    const progressLocation =
+      config.progressDefaultLocation === 'window'
+        ? vscode.ProgressLocation.Window
+        : vscode.ProgressLocation.Notification;
+
+    await vscode.window.withProgress(
+      {
+        location: progressLocation,
+        cancellable: true,
+        title: `Runner: ${label}`,
+      },
+      async (progress, token) => {
+        const increment = 100 / filePaths.length;
+        let index = 0;
+        for (const filePath of filePaths) {
+          if (token.isCancellationRequested) {
+            break;
+          }
+          index += 1;
+          const uri = vscode.Uri.file(filePath);
+          const relativePath = vscode.workspace.asRelativePath(uri, false);
+          progress.report({ message: `Running ${relativePath}`, increment });
+
+          const fileResult: BatchRunFileResult = {
+            filePath,
+            durationMs: 0,
+            entries: [],
+          };
+
+          const fileStart = Date.now();
+          try {
+            const httpFile = await this.documentStore.getWithUri(uri);
+            const context: httpyac.HttpFileSendContext = {
+              httpFile,
+            };
+            context.progress = {
+              divider: 1,
+              isCanceled: () => token.isCancellationRequested,
+              register: (event: () => void) => {
+                const dispose = token.onCancellationRequested(event);
+                return () => dispose.dispose();
+              },
+              report: data => progress.report(data),
+            };
+            context.logResponse = async (response, httpRegion) => {
+              if (!response || !httpRegion) {
+                return;
+              }
+              const testResults = httpRegion.testResults || [];
+              const testFailedCount = testResults.filter(result =>
+                [httpyac.TestResultStatus.ERROR, httpyac.TestResultStatus.FAILED].includes(result.status)
+              ).length;
+              const testTotalCount = testResults.length;
+              const durationMs = response.timings?.total || 0;
+              const status = response.statusCode || 0;
+              const isSuccess = status > 0 && status < 400 && testFailedCount === 0;
+
+              totalRequests += 1;
+              if (!isSuccess) {
+                failedRequests += 1;
+              }
+              totalTests += testTotalCount;
+              failedTests += testFailedCount;
+
+              fileResult.entries.push({
+                filePath,
+                name: getHttpRegionDisplayName(httpRegion) || httpRegion.symbol.name,
+                method: httpRegion.request?.method,
+                url: httpRegion.request?.url,
+                status,
+                statusText: response.statusMessage,
+                durationMs,
+                testTotal: testTotalCount,
+                testFailed: testFailedCount,
+                request: convertHttpRegionToRequest(httpRegion) || undefined,
+                response: this.toHttpResponse(response, httpRegion.testResults),
+              });
+
+              await this.responseStore.add(response, httpRegion, false);
+            };
+
+            await this.documentStore.send(context);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            fileResult.error = message;
+          } finally {
+            fileResult.durationMs = Date.now() - fileStart;
+            results.push(fileResult);
+          }
+        }
+      }
+    );
+
+    const finishedAt = Date.now();
+    const summary: BatchRunSummary = {
+      label,
+      startedAt,
+      finishedAt,
+      durationMs: finishedAt - startedAt,
+      totalRequests,
+      failedRequests,
+      totalTests,
+      failedTests,
+      files: results,
+    };
+
+    this.runnerResults.unshift(summary);
+    this.runnerResults.splice(20);
+    await this.broadcastRunnerResults();
+
+    await vscode.commands.executeCommand(commands.openRunnerResults);
+
+    const message = `Runner finished: ${totalRequests} requests, ${failedRequests} failed.`;
+    await vscode.window.showInformationMessage(message);
+  }
+
   private async appendRequestToFile(
     request: HttpRequest,
     targetUri: vscode.Uri,
@@ -696,6 +839,16 @@ export class WebviewMessageHandler implements vscode.Disposable {
       {
         type: 'historyUpdated',
         payload: items,
+      },
+      target
+    );
+  }
+
+  private async broadcastRunnerResults(target?: vscode.Webview): Promise<void> {
+    this.postMessage(
+      {
+        type: 'runnerResultsUpdated',
+        payload: this.runnerResults,
       },
       target
     );

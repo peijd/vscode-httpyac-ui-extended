@@ -1195,6 +1195,12 @@
         "title": "Open Request Editor",
         "category": "httpYac",
         "icon": "$(edit)"
+      },
+      {
+        "command": "httpyac.openRunnerResults",
+        "title": "Open Runner Results",
+        "category": "httpYac",
+        "icon": "$(list-unordered)"
       }
     ],
     "menus": {

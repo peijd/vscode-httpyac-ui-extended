@@ -25,6 +25,7 @@ export const commands = {
   pruneStorage: `${APP_NAME}.pruneStorage`,
   resetOutputChannel: `${APP_NAME}.resetOutputChannel`,
   openRequestEditor: `${APP_NAME}.openRequestEditor`,
+  openRunnerResults: `${APP_NAME}.openRunnerResults`,
 };
 
 export type ResponseViewContent = 'body' | 'headers' | 'full' | 'exchange';

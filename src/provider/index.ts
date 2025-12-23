@@ -20,3 +20,4 @@ export * from './variablesHoverProvider';
 export * from './variablesTreeDataProvider';
 export * from './webviewSidebarProvider';
 export * from './webviewPanelProvider';
+export * from './runnerPanelProvider';

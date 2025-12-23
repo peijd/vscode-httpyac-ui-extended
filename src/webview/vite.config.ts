@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         sidebar: resolve(__dirname, 'sidebar.html'),
         editor: resolve(__dirname, 'editor.html'),
+        runner: resolve(__dirname, 'runner.html'),
       },
       output: {
         entryFileNames: 'assets/[name].js',

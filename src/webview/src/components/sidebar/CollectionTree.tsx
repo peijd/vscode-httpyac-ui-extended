@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, ScrollArea, Button } from '@/components/ui';
 import { MethodBadge } from '@/components/request';
-import { Folder, FileText, ExternalLink } from 'lucide-react';
+import { Folder, FileText, ExternalLink, Play } from 'lucide-react';
 import { useStore, useVsCodeMessages } from '@/hooks';
 import type { CollectionItem } from '@/types';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ interface CollectionNodeProps {
   level: number;
   onRequestClick: (item: CollectionItem) => void;
   onOpenInEditor: (item: CollectionItem) => void;
+  onRun: (item: CollectionItem) => void;
   filterText: string;
   activeRequestId?: string;
 }
@@ -58,6 +59,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
   level,
   onRequestClick,
   onOpenInEditor,
+  onRun,
   filterText,
   activeRequestId,
 }) => {
@@ -67,7 +69,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
       <AccordionItem value={item.id} className="border-none">
         <AccordionTrigger
           className={cn(
-            'py-1.5 px-2 rounded-md transition-colors hover:bg-vscode-list-hover ui-hover',
+            'group py-1.5 px-2 rounded-md transition-colors hover:bg-vscode-list-hover ui-hover',
             'data-[state=open]:bg-[var(--vscode-list-inactiveSelectionBackground)]'
           )}
           style={{ paddingLeft: `${level * 12 + 8}px` }}
@@ -76,6 +78,25 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
             <Folder className="h-4 w-4 text-[var(--vscode-symbolIcon-folderForeground)]" />
             <span className="text-sm truncate">{highlightText(item.name, filterText)}</span>
           </div>
+          <span
+            role="button"
+            tabIndex={0}
+            className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs transition-colors hover:bg-vscode-list-hover opacity-0 group-hover:opacity-100 ui-hover"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRun(item);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.stopPropagation();
+                onRun(item);
+              }
+            }}
+            title="Run collection"
+          >
+            <Play className="h-3 w-3" />
+          </span>
           <span className="ml-2 ui-chip">
             {requestCount}
           </span>
@@ -88,6 +109,7 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
               level={level + 1}
               onRequestClick={onRequestClick}
               onOpenInEditor={onOpenInEditor}
+              onRun={onRun}
               filterText={filterText}
               activeRequestId={activeRequestId}
             />
@@ -131,6 +153,18 @@ const CollectionNode: React.FC<CollectionNodeProps> = ({
         }}
       >
         <ExternalLink className="h-3 w-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5 opacity-0 group-hover:opacity-100 ui-hover"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRun(item);
+        }}
+        title="Run collection"
+      >
+        <Play className="h-3 w-3" />
       </Button>
     </div>
   );
@@ -191,7 +225,7 @@ function collectFolderIds(items: CollectionItem[], ids: string[] = []): string[]
 
 export const CollectionTree: React.FC<CollectionTreeProps> = ({ filterText = '' }) => {
   const { collections, setCurrentRequest, currentRequest } = useStore();
-  const { openInEditor, openHttpFile } = useVsCodeMessages();
+  const { openInEditor, openHttpFile, runCollection } = useVsCodeMessages();
   const normalizedFilter = filterText.trim().toLowerCase();
   const filteredCollections = useMemo(
     () => filterCollections(collections, normalizedFilter),
@@ -221,6 +255,47 @@ export const CollectionTree: React.FC<CollectionTreeProps> = ({ filterText = '' 
     }
   };
 
+  const findCollectionById = (items: CollectionItem[], id: string): CollectionItem | undefined => {
+    for (const item of items) {
+      if (item.id === id) {
+        return item;
+      }
+      if (item.children?.length) {
+        const match = findCollectionById(item.children, id);
+        if (match) {
+          return match;
+        }
+      }
+    }
+    return undefined;
+  };
+
+  const collectHttpFilePaths = (item: CollectionItem): string[] => {
+    const paths = new Set<string>();
+    const walk = (node: CollectionItem) => {
+      if (node.httpFilePath) {
+        paths.add(node.httpFilePath);
+      }
+      if (node.children?.length) {
+        node.children.forEach(child => walk(child));
+      }
+    };
+    walk(item);
+    return Array.from(paths.values());
+  };
+
+  const handleRunItem = (item: CollectionItem) => {
+    const sourceItem = findCollectionById(collections, item.id) || item;
+    const filePaths = collectHttpFilePaths(sourceItem);
+    if (filePaths.length === 0) {
+      return;
+    }
+    runCollection({
+      label: sourceItem.name || 'Collection',
+      filePaths,
+    });
+  };
+
   return (
     <ScrollArea className="flex-1">
       {collections.length === 0 ? (
@@ -244,6 +319,7 @@ export const CollectionTree: React.FC<CollectionTreeProps> = ({ filterText = '' 
               level={0}
               onRequestClick={handleRequestClick}
               onOpenInEditor={handleOpenInEditor}
+              onRun={handleRunItem}
               filterText={normalizedFilter}
               activeRequestId={currentRequest.id}
             />
@@ -258,6 +334,7 @@ export const CollectionTree: React.FC<CollectionTreeProps> = ({ filterText = '' 
               level={0}
               onRequestClick={handleRequestClick}
               onOpenInEditor={handleOpenInEditor}
+              onRun={handleRunItem}
               filterText={normalizedFilter}
               activeRequestId={currentRequest.id}
             />
