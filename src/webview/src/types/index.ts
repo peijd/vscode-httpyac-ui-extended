@@ -149,6 +149,18 @@ export interface Environment {
   isActive: boolean;
 }
 
+export interface EnvironmentSnapshotEntry {
+  name: string;
+  variables: Record<string, string>;
+}
+
+export interface EnvironmentSnapshot {
+  active: string[];
+  environments: EnvironmentSnapshotEntry[];
+  runtime: Record<string, string>;
+  updatedAt: number;
+}
+
 // App State
 export interface AppState {
   currentRequest: HttpRequest;
@@ -158,6 +170,7 @@ export interface AppState {
   requestTextRequestId?: string;
   environments: Environment[];
   activeEnvironments: string[];
+  environmentSnapshot: EnvironmentSnapshot | null;
   history: HistoryItem[];
   collections: CollectionItem[];
   runnerResults: BatchRunSummary[];
@@ -172,6 +185,8 @@ export type MessageType =
   | 'getEnvironments'
   | 'setEnvironments'
   | 'environmentsUpdated'
+  | 'getEnvironmentSnapshot'
+  | 'environmentSnapshotUpdated'
   | 'getHistory'
   | 'historyUpdated'
   | 'getCollections'
@@ -183,6 +198,7 @@ export type MessageType =
   | 'getRequestText'
   | 'requestText'
   | 'openInEditor'
+  | 'openEnvironmentSnapshot'
   | 'openHttpFile'
   | 'openSourceLocation'
   | 'attachToHttpFile'

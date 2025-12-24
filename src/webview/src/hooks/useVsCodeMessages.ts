@@ -9,6 +9,7 @@ import type {
   CollectionItem,
   BatchRunRequest,
   BatchRunSummary,
+  EnvironmentSnapshot,
 } from '@/types';
 import { generateId } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ export function useVsCodeMessages() {
     setRequestText,
     setEnvironments,
     setActiveEnvironments,
+    setEnvironmentSnapshot,
     setHistory,
     setCollections,
     setRunnerResults,
@@ -30,6 +32,20 @@ export function useVsCodeMessages() {
   // Handle incoming messages from VSCode
   useEffect(() => {
     const unsubscribe = addMessageListener((message: Message) => {
+      const handleEnvironmentsUpdated = (payload: unknown) => {
+        const envData = payload as {
+          environments: Array<{ name: string; variables: Record<string, string> }>;
+          active: string[];
+        };
+        setEnvironments(
+          envData.environments.map((e) => ({
+            ...e,
+            isActive: envData.active.includes(e.name),
+          }))
+        );
+        setActiveEnvironments(envData.active);
+      };
+
       switch (message.type) {
         case 'requestResponse':
           setLoading(false);
@@ -47,17 +63,10 @@ export function useVsCodeMessages() {
         }
 
         case 'environmentsUpdated':
-          const envData = message.payload as {
-            environments: Array<{ name: string; variables: Record<string, string> }>;
-            active: string[];
-          };
-          setEnvironments(
-            envData.environments.map((e) => ({
-              ...e,
-              isActive: envData.active.includes(e.name),
-            }))
-          );
-          setActiveEnvironments(envData.active);
+          handleEnvironmentsUpdated(message.payload);
+          break;
+        case 'environmentSnapshotUpdated':
+          setEnvironmentSnapshot(message.payload as EnvironmentSnapshot);
           break;
 
         case 'historyUpdated':
@@ -90,6 +99,7 @@ export function useVsCodeMessages() {
     setRequestText,
     setEnvironments,
     setActiveEnvironments,
+    setEnvironmentSnapshot,
     setHistory,
     setCollections,
     setRunnerResults,
@@ -113,6 +123,10 @@ export function useVsCodeMessages() {
   // Request environments from VSCode
   const requestEnvironments = useCallback(() => {
     postMessage('getEnvironments');
+  }, []);
+
+  const requestEnvironmentSnapshot = useCallback(() => {
+    postMessage('getEnvironmentSnapshot');
   }, []);
 
   // Set active environments
@@ -193,6 +207,10 @@ export function useVsCodeMessages() {
     postMessage('runCollection', payload);
   }, []);
 
+  const openEnvironmentSnapshot = useCallback(() => {
+    postMessage('openEnvironmentSnapshot');
+  }, []);
+
   const requestRunnerResults = useCallback(() => {
     postMessage('getRunnerResults');
   }, []);
@@ -206,6 +224,7 @@ export function useVsCodeMessages() {
   return {
     sendRequest,
     requestEnvironments,
+    requestEnvironmentSnapshot,
     selectEnvironments,
     requestHistory,
     requestCollections,
@@ -219,6 +238,7 @@ export function useVsCodeMessages() {
     openSourceLocation,
     attachToHttpFile,
     runCollection,
+    openEnvironmentSnapshot,
     requestRunnerResults,
     notifyReady,
   };

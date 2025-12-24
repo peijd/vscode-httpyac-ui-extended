@@ -6,6 +6,8 @@ export type MessageType =
   | 'getEnvironments'
   | 'setEnvironments'
   | 'environmentsUpdated'
+  | 'getEnvironmentSnapshot'
+  | 'environmentSnapshotUpdated'
   | 'getHistory'
   | 'historyUpdated'
   | 'getCollections'
@@ -17,6 +19,7 @@ export type MessageType =
   | 'getRequestText'
   | 'requestText'
   | 'openInEditor'
+  | 'openEnvironmentSnapshot'
   | 'openHttpFile'
   | 'openSourceLocation'
   | 'attachToHttpFile'
@@ -31,6 +34,13 @@ export interface Message<T = unknown> {
   type: MessageType;
   payload?: T;
   requestId?: string;
+}
+
+export interface EnvironmentSnapshot {
+  active: string[];
+  environments: Array<{ name: string; variables: Record<string, string> }>;
+  runtime: Record<string, string>;
+  updatedAt: number;
 }
 
 // HTTP Method types

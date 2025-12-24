@@ -4,6 +4,7 @@ import type {
   HttpRequest,
   HttpResponse,
   Environment,
+  EnvironmentSnapshot,
   HistoryItem,
   CollectionItem,
   KeyValue,
@@ -90,6 +91,7 @@ interface StoreActions {
   // Environments
   setEnvironments: (environments: Environment[]) => void;
   setActiveEnvironments: (names: string[]) => void;
+  setEnvironmentSnapshot: (snapshot: EnvironmentSnapshot | null) => void;
 
   // History
   setHistory: (history: HistoryItem[]) => void;
@@ -114,6 +116,7 @@ export const useStore = create<Store>(set => ({
   requestTextRequestId: undefined,
   environments: [],
   activeEnvironments: [],
+  environmentSnapshot: null,
   history: [],
   collections: [],
   runnerResults: [],
@@ -266,6 +269,7 @@ export const useStore = create<Store>(set => ({
   // Environments
   setEnvironments: environments => set({ environments }),
   setActiveEnvironments: activeEnvironments => set({ activeEnvironments }),
+  setEnvironmentSnapshot: environmentSnapshot => set({ environmentSnapshot }),
 
   // History
   setHistory: history => set({ history }),
