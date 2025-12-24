@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.3] - 2025-12-24
+
+### Added
+
+- Environment snapshot functionality - view runtime variables in a dedicated panel
+- Script management tab in Request Editor for pre-request and post-request scripts
+- JavaScript language support in CodeEditor component
+- Script statistics display and snippet insertion support
+- Enhanced environment snapshot UI with improved accessibility
+
+### Enhanced
+
+- Improved code editor with better language support
+- Refactored UI components for better maintainability
+- Updated CodeMirror packages for enhanced functionality
+
 ## [0.1.1] - 2025-12-22
 
 ### Fix

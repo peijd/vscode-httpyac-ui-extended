@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as httpyac from 'httpyac';
+import type { HarRequest } from 'httpsnippet';
+import type { TargetId } from 'httpsnippet/dist/targets/targets';
 import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
 import { commands, getConfigSetting, getEnvironmentConfig } from '../config';
@@ -15,6 +17,7 @@ import type {
   BatchRunRequest,
   BatchRunSummary,
   BatchRunFileResult,
+  FailureBehavior,
 } from './messageTypes';
 import {
   computeHttpRegionSourceHash,
@@ -37,6 +40,7 @@ type FileSortMeta = {
 
 export class WebviewMessageHandler implements vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
+  private readonly envSnapshotSubscribers = new Set<vscode.Webview>();
   private readonly disposables: vscode.Disposable[];
   private readonly runnerResults: BatchRunSummary[] = [];
 
@@ -48,9 +52,11 @@ export class WebviewMessageHandler implements vscode.Disposable {
     this.disposables = [
       this.documentStore.documentStoreChanged(() => {
         void this.broadcastEnvironmentState();
+        void this.broadcastEnvironmentSnapshot();
       }),
       this.storeController.environmentChanged(() => {
         void this.broadcastEnvironmentState();
+        void this.broadcastEnvironmentSnapshot();
       }),
       this.documentStore.httpFileChanged(() => {
         void this.broadcastCollections();
@@ -66,6 +72,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
     return {
       dispose: () => {
         this.webviews.delete(webview);
+        this.envSnapshotSubscribers.delete(webview);
       },
     };
   }
@@ -84,6 +91,10 @@ export class WebviewMessageHandler implements vscode.Disposable {
         break;
       case 'getEnvironments':
         await this.broadcastEnvironmentState(webview);
+        break;
+      case 'getEnvironmentSnapshot':
+        this.envSnapshotSubscribers.add(webview);
+        await this.broadcastEnvironmentSnapshot(webview);
         break;
       case 'setEnvironments':
         await this.handleSetEnvironments(message.payload as string[]);
@@ -112,6 +123,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'openInEditor':
         await this.handleOpenInEditor(message.payload as HttpRequest);
         break;
+      case 'openEnvironmentSnapshot':
+        await vscode.commands.executeCommand(commands.openEnvironmentSnapshot);
+        break;
       case 'openHttpFile':
         await this.handleOpenHttpFile(message.payload as string);
         break;
@@ -126,6 +140,13 @@ export class WebviewMessageHandler implements vscode.Disposable {
         break;
       case 'getRunnerResults':
         await this.broadcastRunnerResults(webview);
+        break;
+      case 'generateCode':
+        await this.handleGenerateCode(
+          message.payload as { request: HttpRequest; target: string; client: string },
+          webview,
+          message.requestId
+        );
         break;
       case 'ready':
         await Promise.all([
@@ -164,10 +185,123 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
   }
 
+  private async handleGenerateCode(
+    payload: { request: HttpRequest; target: string; client: string },
+    webview: vscode.Webview,
+    requestId?: string
+  ): Promise<void> {
+    try {
+      const { request, target, client } = payload;
+
+      // Import httpsnippet dynamically
+      const { HTTPSnippet } = await import('httpsnippet');
+
+      // Build HAR request from HttpRequest
+      const headers = request.headers.filter(h => h.enabled && h.key).map(h => ({ name: h.key, value: h.value }));
+
+      // Add auth headers
+      if (request.auth.type === 'basic' && request.auth.basic) {
+        const credentials = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString(
+          'base64'
+        );
+        headers.push({ name: 'Authorization', value: `Basic ${credentials}` });
+      } else if (request.auth.type === 'bearer' && request.auth.bearer) {
+        headers.push({ name: 'Authorization', value: `Bearer ${request.auth.bearer.token}` });
+      } else if (request.auth.type === 'apikey' && request.auth.apikey?.addTo === 'header') {
+        const headerName = request.auth.apikey.key || 'X-API-Key';
+        headers.push({ name: headerName, value: request.auth.apikey.value });
+      }
+
+      // Build URL with query params
+      const url = request.url || '';
+      const queryParams: Array<{ name: string; value: string }> = [];
+      for (const param of request.params.filter(p => p.enabled && p.key)) {
+        queryParams.push({ name: param.key, value: param.value });
+      }
+      // Add API Key as query param if configured
+      if (request.auth.type === 'apikey' && request.auth.apikey?.addTo === 'query') {
+        const key = request.auth.apikey.key || 'api_key';
+        queryParams.push({ name: key, value: request.auth.apikey.value });
+      }
+
+      const harRequest: Partial<HarRequest> = {
+        method: request.method,
+        url,
+        headers,
+        queryString: queryParams,
+      };
+
+      // Add body
+      if (request.body.type !== 'none') {
+        let bodyContent = '';
+        let mimeType = 'application/json';
+
+        if (request.body.type === 'form' || request.body.type === 'formdata') {
+          bodyContent = (request.body.formData || [])
+            .filter(f => f.enabled && f.key)
+            .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
+            .join('&');
+          mimeType = 'application/x-www-form-urlencoded';
+        } else {
+          bodyContent = request.body.content || '';
+          const contentTypeHeader = headers.find(h => h.name.toLowerCase() === 'content-type');
+          if (contentTypeHeader) {
+            mimeType = contentTypeHeader.value;
+          }
+        }
+
+        if (bodyContent) {
+          if (mimeType === 'application/x-www-form-urlencoded') {
+            harRequest.postData = {
+              params: bodyContent.split('&').map(pair => {
+                const [name, value] = pair.split('=');
+                return { name: decodeURIComponent(name || ''), value: decodeURIComponent(value || '') };
+              }),
+              mimeType,
+            };
+          } else {
+            harRequest.postData = {
+              text: bodyContent,
+              mimeType,
+            };
+          }
+        }
+      }
+
+      const snippet = new HTTPSnippet(harRequest as HarRequest);
+      const result = snippet.convert(target as TargetId, client);
+
+      let code = '';
+      if (Array.isArray(result)) {
+        code = result.join('\n');
+      } else if (result) {
+        code = result;
+      }
+
+      this.postMessage(
+        {
+          type: 'codeGenerated',
+          payload: { code, target, client },
+          requestId,
+        },
+        webview
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate code';
+      this.postMessage(
+        {
+          type: 'codeGenerated',
+          payload: { code: `// Error: ${errorMessage}`, target: payload.target, client: payload.client },
+          requestId,
+        },
+        webview
+      );
+    }
+  }
+
   private async handleSendRequest(request: HttpRequest, webview: vscode.Webview, requestId?: string): Promise<void> {
     try {
       const startTime = Date.now();
-      const httpContent = convertRequestToHttpContent(request);
       let parseUri: vscode.Uri | undefined;
       if (request.source?.filePath) {
         parseUri = vscode.Uri.file(request.source.filePath);
@@ -177,6 +311,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           parseUri = toUri(current.fileName);
         }
       }
+      const httpContent = convertRequestToHttpContent(request);
       const httpFile = await this.documentStore.parse(parseUri, httpContent);
 
       if (!httpFile || httpFile.httpRegions.length === 0) {
@@ -189,18 +324,32 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
       let responseForWebview: httpyac.HttpResponse | undefined;
       let activeEnvironment: string[] | undefined = this.documentStore.activeEnvironment;
+      let sourceHttpFile: httpyac.HttpFile | undefined;
       if (!activeEnvironment && request.source?.filePath) {
         try {
-          const sourceHttpFile = await this.documentStore.getWithUri(vscode.Uri.file(request.source.filePath));
+          sourceHttpFile = await this.documentStore.getWithUri(vscode.Uri.file(request.source.filePath));
           activeEnvironment = this.documentStore.getActiveEnvironment(sourceHttpFile);
         } catch {
           // fallback to global active environment
         }
       }
+      const envRegion = sourceHttpFile?.httpRegions.find(region => !region.isGlobal() && region.request) || httpRegion;
+      const resolvedRequest = await this.resolveRequestVariables(
+        request,
+        sourceHttpFile || httpFile,
+        envRegion,
+        activeEnvironment,
+        parseUri
+      );
+      const resolvedContent = convertRequestToHttpContent(resolvedRequest);
+      const resolvedHttpFile =
+        resolvedContent === httpContent ? httpFile : await this.documentStore.parse(parseUri, resolvedContent);
+      const resolvedRegion =
+        resolvedHttpFile.httpRegions.find(region => !region.isGlobal() && region.request) || httpRegion;
 
       const context: httpyac.HttpRegionSendContext = {
-        httpFile,
-        httpRegion,
+        httpFile: resolvedHttpFile,
+        httpRegion: resolvedRegion,
         activeEnvironment,
       };
       context.logResponse = async (response, region) => {
@@ -567,6 +716,63 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
 
     const label = payload?.label?.trim() || 'Collection';
+    const options = payload?.options || {};
+    const iterations = Math.max(1, options.iterations || 1);
+    const delayMs = Math.max(0, options.delayMs || 0);
+    const failureBehavior: FailureBehavior = options.failureBehavior || 'continue';
+
+    const config = getConfigSetting();
+    const progressLocation =
+      config.progressDefaultLocation === 'window'
+        ? vscode.ProgressLocation.Window
+        : vscode.ProgressLocation.Notification;
+
+    for (let iteration = 1; iteration <= iterations; iteration++) {
+      const iterationSummary = await this.runSingleIteration(
+        iteration,
+        iterations,
+        label,
+        filePaths,
+        options,
+        delayMs,
+        failureBehavior,
+        progressLocation
+      );
+
+      this.runnerResults.unshift(iterationSummary.summary);
+      this.runnerResults.splice(50); // Keep more results for iteration runs
+      await this.broadcastRunnerResults();
+
+      if (iterationSummary.shouldStop) {
+        break;
+      }
+
+      // Delay between iterations (not after last iteration)
+      if (delayMs > 0 && iteration < iterations) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    await vscode.commands.executeCommand(commands.openRunnerResults);
+
+    const latestResult = this.runnerResults[0];
+    const message =
+      iterations > 1
+        ? `Runner finished ${iterations} iterations: ${latestResult?.totalRequests || 0} requests per iteration.`
+        : `Runner finished: ${latestResult?.totalRequests || 0} requests, ${latestResult?.failedRequests || 0} failed.`;
+    await vscode.window.showInformationMessage(message);
+  }
+
+  private async runSingleIteration(
+    iteration: number,
+    totalIterations: number,
+    label: string,
+    filePaths: string[],
+    options: { iterations?: number; delayMs?: number; failureBehavior?: FailureBehavior },
+    delayMs: number,
+    failureBehavior: FailureBehavior,
+    progressLocation: vscode.ProgressLocation
+  ): Promise<{ summary: BatchRunSummary; shouldStop: boolean }> {
     const startedAt = Date.now();
     const results: BatchRunFileResult[] = [];
     const counters = {
@@ -575,23 +781,21 @@ export class WebviewMessageHandler implements vscode.Disposable {
       totalTests: 0,
       failedTests: 0,
     };
+    // Use object reference to avoid no-loop-func issues
+    const stopState = { stopAll: false, stopFile: false };
 
-    const config = getConfigSetting();
-    const progressLocation =
-      config.progressDefaultLocation === 'window'
-        ? vscode.ProgressLocation.Window
-        : vscode.ProgressLocation.Notification;
+    const iterLabel = totalIterations > 1 ? `${label} (${iteration}/${totalIterations})` : label;
 
     await vscode.window.withProgress(
       {
         location: progressLocation,
         cancellable: true,
-        title: `Runner: ${label}`,
+        title: `Runner: ${iterLabel}`,
       },
       async (progress, token) => {
         const increment = 100 / filePaths.length;
         for (const filePath of filePaths) {
-          if (token.isCancellationRequested) {
+          if (token.isCancellationRequested || stopState.stopAll) {
             break;
           }
           const uri = vscode.Uri.file(filePath);
@@ -605,6 +809,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           };
 
           const fileStart = Date.now();
+          stopState.stopFile = false;
           try {
             const httpFile = await this.documentStore.getWithUri(uri);
             const context: httpyac.HttpFileSendContext = {
@@ -612,19 +817,39 @@ export class WebviewMessageHandler implements vscode.Disposable {
             };
             context.progress = {
               divider: 1,
-              isCanceled: () => token.isCancellationRequested,
+              isCanceled: () => token.isCancellationRequested || stopState.stopFile || stopState.stopAll,
               register: (event: () => void) => {
                 const dispose = token.onCancellationRequested(event);
                 return () => dispose.dispose();
               },
               report: data => progress.report(data),
             };
-            context.logResponse = this.createRunnerLogResponse(fileResult, filePath, counters);
+            context.logResponse = this.createRunnerLogResponseWithControl(
+              fileResult,
+              filePath,
+              counters,
+              failureBehavior,
+              stopState
+            );
 
             await this.documentStore.send(context);
+
+            // Apply delay between requests (not after last file)
+            if (
+              delayMs > 0 &&
+              filePath !== filePaths[filePaths.length - 1] &&
+              !stopState.stopFile &&
+              !stopState.stopAll
+            ) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            fileResult.error = message;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            fileResult.error = errorMessage;
+            counters.failedRequests += 1;
+            if (failureBehavior === 'stopAll') {
+              stopState.stopAll = true;
+            }
           } finally {
             fileResult.durationMs = Date.now() - fileStart;
             results.push(fileResult);
@@ -635,7 +860,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
 
     const finishedAt = Date.now();
     const summary: BatchRunSummary = {
-      label,
+      label: iterLabel,
       startedAt,
       finishedAt,
       durationMs: finishedAt - startedAt,
@@ -644,19 +869,15 @@ export class WebviewMessageHandler implements vscode.Disposable {
       totalTests: counters.totalTests,
       failedTests: counters.failedTests,
       files: results,
+      options,
+      iteration,
+      totalIterations,
     };
 
-    this.runnerResults.unshift(summary);
-    this.runnerResults.splice(20);
-    await this.broadcastRunnerResults();
-
-    await vscode.commands.executeCommand(commands.openRunnerResults);
-
-    const message = `Runner finished: ${counters.totalRequests} requests, ${counters.failedRequests} failed.`;
-    await vscode.window.showInformationMessage(message);
+    return { summary, shouldStop: stopState.stopAll };
   }
 
-  private createRunnerLogResponse(
+  private createRunnerLogResponseWithControl(
     fileResult: BatchRunFileResult,
     filePath: string,
     counters: {
@@ -664,7 +885,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       failedRequests: number;
       totalTests: number;
       failedTests: number;
-    }
+    },
+    failureBehavior: FailureBehavior,
+    stopState: { stopFile: boolean; stopAll: boolean }
   ): (response?: httpyac.HttpResponse, httpRegion?: httpyac.HttpRegion) => Promise<void> {
     return async (response, httpRegion) => {
       if (!response || !httpRegion) {
@@ -701,6 +924,15 @@ export class WebviewMessageHandler implements vscode.Disposable {
       });
 
       await this.responseStore.add(response, httpRegion, false);
+
+      // Handle failure behavior
+      if (!isSuccess) {
+        if (failureBehavior === 'stopFile') {
+          stopState.stopFile = true;
+        } else if (failureBehavior === 'stopAll') {
+          stopState.stopAll = true;
+        }
+      }
     };
   }
 
@@ -787,6 +1019,21 @@ export class WebviewMessageHandler implements vscode.Disposable {
     );
   }
 
+  private async broadcastEnvironmentSnapshot(target?: vscode.Webview): Promise<void> {
+    const payload = await this.collectEnvironmentSnapshot();
+    const message: Message = {
+      type: 'environmentSnapshotUpdated',
+      payload,
+    };
+    if (target) {
+      target.postMessage(message);
+      return;
+    }
+    for (const webview of this.envSnapshotSubscribers) {
+      webview.postMessage(message);
+    }
+  }
+
   private async collectEnvironmentState() {
     const environments: Array<{ name: string; variables: Record<string, string> }> = [];
     const active: string[] = [];
@@ -808,7 +1055,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
             });
             return {
               name,
-              variables: this.normalizeVariables(variables),
+              variables: this.normalizeVariables(this.filterDisplayVariables(variables)),
             };
           })
       );
@@ -822,6 +1069,84 @@ export class WebviewMessageHandler implements vscode.Disposable {
       active.push(...this.documentStore.activeEnvironment);
     }
     return { environments, active };
+  }
+
+  private async collectEnvironmentSnapshot() {
+    const state = await this.collectEnvironmentState();
+    const runtimeVariables = this.normalizeVariables(this.filterDisplayVariables(this.documentStore.variables));
+    return {
+      ...state,
+      runtime: runtimeVariables,
+      updatedAt: Date.now(),
+    };
+  }
+
+  private filterDisplayVariables(vars: httpyac.Variables | undefined): httpyac.Variables | undefined {
+    if (!vars) {
+      return vars;
+    }
+    const result: httpyac.Variables = {};
+    for (const [key, value] of Object.entries(vars)) {
+      if (this.shouldHideVariable(key, value)) {
+        continue;
+      }
+      result[key] = value;
+    }
+    return result;
+  }
+
+  private shouldHideVariable(key: string, value: unknown): boolean {
+    if (!key) {
+      return true;
+    }
+    const loweredKey = key.toLowerCase();
+    if (loweredKey === 'response' || loweredKey === 'last_response' || loweredKey === 'request') {
+      return true;
+    }
+    if (loweredKey.endsWith('response')) {
+      return true;
+    }
+    if (key === '$global' && value && typeof value === 'object' && Object.keys(value as object).length === 0) {
+      return true;
+    }
+    if (this.isResponseLike(value) || this.isResponsePayloadLike(value)) {
+      return true;
+    }
+    if (value && typeof value === 'object') {
+      if (httpyac.utils.isHttpResponse(value) || httpyac.utils.isHttpRequest(value as httpyac.Request)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isResponseLike(value: unknown): boolean {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    return 'statusCode' in value && 'headers' in value;
+  }
+
+  private isResponsePayloadLike(value: unknown): boolean {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const candidate = value as Record<string, unknown>;
+    const hasRequestShape =
+      typeof candidate.method === 'string' &&
+      typeof candidate.url === 'string' &&
+      candidate.headers &&
+      typeof candidate.headers === 'object';
+    if (!hasRequestShape) {
+      return false;
+    }
+    return (
+      'statusCode' in candidate ||
+      'origin' in candidate ||
+      'args' in candidate ||
+      'json' in candidate ||
+      'data' in candidate
+    );
   }
 
   private async getHttpFileForEnvironment(): Promise<httpyac.HttpFile | undefined> {
@@ -1433,6 +1758,115 @@ export class WebviewMessageHandler implements vscode.Disposable {
     );
 
     return [...prefixWithMeta, ...preScriptLines, ...requestLines, ...testScriptLines].join('\n');
+  }
+
+  private async resolveRequestVariables(
+    request: HttpRequest,
+    httpFile: httpyac.HttpFile,
+    httpRegion: httpyac.HttpRegion,
+    activeEnvironment: string[] | undefined,
+    parseUri: vscode.Uri | undefined
+  ): Promise<HttpRequest> {
+    const config = await getEnvironmentConfig(parseUri ?? httpFile.fileName);
+    const baseContext = await httpyac.createEmptyProcessorContext({
+      httpFile,
+      activeEnvironment,
+      config,
+    });
+    const processorContext = {
+      ...baseContext,
+      httpRegion,
+    } as httpyac.ProcessorContext;
+
+    const resolveString = async (value: string, type: httpyac.VariableType | string): Promise<string> => {
+      if (!value) {
+        return value;
+      }
+      const resolved = await httpyac.utils.replaceVariables(value, type, processorContext);
+      if (resolved === httpyac.HookCancel) {
+        throw new Error('请求已取消');
+      }
+      if (typeof resolved === 'string') {
+        return resolved;
+      }
+      if (resolved === undefined || resolved === null) {
+        return value;
+      }
+      return httpyac.utils.toString(resolved) ?? value;
+    };
+
+    const resolveKeyValue = async (item: KeyValue, valueType: httpyac.VariableType | string): Promise<KeyValue> => ({
+      ...item,
+      key: item.key ? await resolveString(item.key, httpyac.VariableType.variable) : item.key,
+      value: item.value ? await resolveString(item.value, valueType) : item.value,
+    });
+
+    const resolvedParams = await Promise.all(
+      (request.params || []).map(item => resolveKeyValue(item, httpyac.VariableType.url))
+    );
+    const resolvedHeaders = await Promise.all(
+      (request.headers || []).map(item => resolveKeyValue(item, httpyac.VariableType.variable))
+    );
+
+    let resolvedAuth = request.auth;
+    if (request.auth.type === 'basic' && request.auth.basic) {
+      resolvedAuth = {
+        type: 'basic',
+        basic: {
+          username: await resolveString(request.auth.basic.username, httpyac.VariableType.variable),
+          password: await resolveString(request.auth.basic.password, httpyac.VariableType.variable),
+        },
+      };
+    } else if (request.auth.type === 'bearer' && request.auth.bearer) {
+      resolvedAuth = {
+        type: 'bearer',
+        bearer: {
+          token: await resolveString(request.auth.bearer.token, httpyac.VariableType.variable),
+        },
+      };
+    } else if (request.auth.type === 'oauth2' && request.auth.oauth2) {
+      resolvedAuth = {
+        type: 'oauth2',
+        oauth2: {
+          grantType: request.auth.oauth2.grantType,
+          tokenUrl: await resolveString(request.auth.oauth2.tokenUrl, httpyac.VariableType.url),
+          clientId: await resolveString(request.auth.oauth2.clientId, httpyac.VariableType.variable),
+          clientSecret: await resolveString(request.auth.oauth2.clientSecret, httpyac.VariableType.variable),
+          scope: request.auth.oauth2.scope
+            ? await resolveString(request.auth.oauth2.scope, httpyac.VariableType.variable)
+            : undefined,
+        },
+      };
+    }
+
+    let resolvedBody: HttpRequest['body'] = { ...request.body };
+    if ((request.body.type === 'form' || request.body.type === 'formdata') && request.body.formData) {
+      resolvedBody = {
+        ...request.body,
+        formData: await Promise.all(
+          request.body.formData.map(item => resolveKeyValue(item, httpyac.VariableType.body))
+        ),
+      };
+    } else if (request.body.type === 'binary' && request.body.binaryPath) {
+      resolvedBody = {
+        ...request.body,
+        binaryPath: await resolveString(request.body.binaryPath, httpyac.VariableType.filePath),
+      };
+    } else if (request.body.content) {
+      resolvedBody = {
+        ...request.body,
+        content: await resolveString(request.body.content, httpyac.VariableType.body),
+      };
+    }
+
+    return {
+      ...request,
+      url: await resolveString(request.url, httpyac.VariableType.url),
+      params: resolvedParams,
+      headers: resolvedHeaders,
+      auth: resolvedAuth,
+      body: resolvedBody,
+    };
   }
 
   private replaceRegionInFile(fileText: string, region: httpyac.HttpRegion, updatedRegion: string): string {

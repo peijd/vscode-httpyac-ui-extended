@@ -4,6 +4,7 @@ import { StatusBadge } from './StatusBadge';
 import { ResponseHeaders } from './ResponseHeaders';
 import { ResponseBody } from './ResponseBody';
 import { TestResults } from './TestResults';
+import { CookieViewer, extractCookies } from './CookieViewer';
 import type { HttpResponse, HttpRequest } from '@/types';
 import { formatBytes, formatTime } from '@/lib/utils';
 import { Copy, FileDown, FilePlus, ClipboardList, Clipboard } from 'lucide-react';
@@ -26,6 +27,10 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({ response, reques
   const hasTests = useMemo(
     () => response.testResults && response.testResults.length > 0,
     [response.testResults]
+  );
+  const cookieCount = useMemo(
+    () => extractCookies(response.headers).length,
+    [response.headers]
   );
   const isLargeResponse = response.size >= LARGE_RESPONSE_BYTES;
   const totalHeaders = Object.keys(response.headers).length;
@@ -114,7 +119,7 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({ response, reques
               Body
             </TabsTrigger>
             <TabsTrigger value="cookies" className="pro-tab">
-              Cookies
+              Cookies{cookieCount > 0 ? ` (${cookieCount})` : ''}
             </TabsTrigger>
             <TabsTrigger value="headers" className="pro-tab">
               Headers ({totalHeaders})
@@ -260,10 +265,8 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({ response, reques
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="cookies" className="flex-1 p-4 m-0 overflow-auto">
-              <div className="text-sm text-[var(--vscode-descriptionForeground)]">
-                No cookies in response
-              </div>
+            <TabsContent value="cookies" className="flex-1 p-0 m-0 overflow-hidden">
+              <CookieViewer headers={response.headers} />
             </TabsContent>
 
             <TabsContent value="headers" className="flex-1 p-0 m-0 overflow-hidden">

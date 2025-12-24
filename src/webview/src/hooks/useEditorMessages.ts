@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { addMessageListener, postMessage } from '@/lib/vscode';
 import { useStore } from './useStore';
 import type { Message, HttpRequest, HttpResponse } from '@/types';
@@ -15,6 +15,10 @@ export function useEditorMessages() {
     setEnvironments,
     setActiveEnvironments,
   } = useStore();
+
+  // Code generation state
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
 
   useEffect(() => {
     const unsubscribe = addMessageListener((message: Message) => {
@@ -49,6 +53,12 @@ export function useEditorMessages() {
         case 'setRequest':
           setCurrentRequest(message.payload as HttpRequest);
           break;
+        case 'codeGenerated': {
+          const payload = message.payload as { code: string; target: string; client: string };
+          setGeneratedCode(payload?.code ?? null);
+          setIsGeneratingCode(false);
+          break;
+        }
         default:
           break;
       }
@@ -115,6 +125,21 @@ export function useEditorMessages() {
     postMessage('ready');
   }, []);
 
+  const generateCode = useCallback(
+    (target: string, client: string, request?: HttpRequest) => {
+      const req = request || currentRequest;
+      setIsGeneratingCode(true);
+      setGeneratedCode(null);
+      const requestId = generateId();
+      postMessage('generateCode', { request: req, target, client }, requestId);
+    },
+    [currentRequest]
+  );
+
+  const clearGeneratedCode = useCallback(() => {
+    setGeneratedCode(null);
+  }, []);
+
   return {
     sendRequest,
     saveToHttpFile,
@@ -124,5 +149,9 @@ export function useEditorMessages() {
     openSourceLocation,
     attachToHttpFile,
     notifyReady,
+    generateCode,
+    generatedCode,
+    isGeneratingCode,
+    clearGeneratedCode,
   };
 }

@@ -436,3 +436,62 @@ button:disabled {
 .text-\[var\(--vscode-symbolIcon-nullForeground\)\] {
   color: var(--vscode-symbolIcon-nullForeground, #569cd6);
 }
+
+/* JSON Tree Viewer */
+.json-node {
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Monaco', monospace);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.json-value {
+  display: inline;
+}
+
+.json-string {
+  color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+}
+
+.json-number {
+  color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
+}
+
+.json-boolean {
+  color: var(--vscode-symbolIcon-booleanForeground, #569cd6);
+}
+
+.json-null,
+.json-undefined {
+  color: var(--vscode-symbolIcon-nullForeground, #569cd6);
+  font-style: italic;
+}
+
+.json-property-key {
+  color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+}
+
+.json-match {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  border-radius: 2px;
+}
+
+.json-copy-btn {
+  transition: opacity var(--ui-fast);
+}
+
+.json-node-header:hover .json-copy-btn {
+  opacity: 1;
+}
+
+.json-children {
+  margin-left: 4px;
+}
+
+.json-entry {
+  min-height: 24px;
+}
+
+.json-key:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}

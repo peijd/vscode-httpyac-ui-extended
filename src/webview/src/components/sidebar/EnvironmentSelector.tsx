@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Button } from '@/components/ui';
 import { RefreshCw } from 'lucide-react';
 import { useStore, useVsCodeMessages } from '@/hooks';
 
 export const EnvironmentSelector: React.FC = () => {
-  const { environments, activeEnvironments } = useStore();
-  const { selectEnvironments, requestEnvironments } = useVsCodeMessages();
+  const { environments, activeEnvironments, environmentSnapshot } = useStore();
+  const { selectEnvironments, requestEnvironments, requestEnvironmentSnapshot, openEnvironmentSnapshot } =
+    useVsCodeMessages();
   const activeEnv = environments.find((env) => env.name === activeEnvironments[0]);
   const activeVarCount = activeEnv ? Object.keys(activeEnv.variables || {}).length : 0;
+  const runtimeVarCount = environmentSnapshot ? Object.keys(environmentSnapshot.runtime || {}).length : 0;
+  const displayVarCount = runtimeVarCount > 0 ? runtimeVarCount : activeVarCount;
+  const hasVars = displayVarCount > 0;
+
+  useEffect(() => {
+    requestEnvironmentSnapshot();
+  }, [requestEnvironmentSnapshot]);
 
   const handleEnvChange = (envName: string) => {
     if (envName === 'none') {
@@ -43,7 +51,18 @@ export const EnvironmentSelector: React.FC = () => {
         </SelectContent>
       </Select>
       <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
-        <span className="ui-chip">Vars {activeVarCount}</span>
+        {hasVars ? (
+          <button
+            type="button"
+            className="ui-chip ui-hover cursor-pointer"
+            onClick={openEnvironmentSnapshot}
+            title="查看全部变量"
+          >
+            Vars {displayVarCount}
+          </button>
+        ) : (
+          <span className="ui-chip">Vars 0</span>
+        )}
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ export const commands = {
   resetOutputChannel: `${APP_NAME}.resetOutputChannel`,
   openRequestEditor: `${APP_NAME}.openRequestEditor`,
   openRunnerResults: `${APP_NAME}.openRunnerResults`,
+  openEnvironmentSnapshot: `${APP_NAME}.openEnvironmentSnapshot`,
 };
 
 export type ResponseViewContent = 'body' | 'headers' | 'full' | 'exchange';

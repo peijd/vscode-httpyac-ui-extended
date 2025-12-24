@@ -63,9 +63,21 @@ function buildScriptBlock(script: string | undefined): string[] {
 function buildUrlWithParams(request: HttpRequest): string {
   let url = request.url || '';
   const enabledParams = request.params.filter(p => p.enabled && p.key);
-  if (enabledParams.length > 0) {
-    const queryString = enabledParams.map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join('&');
-    url += (url.includes('?') ? '&' : '?') + queryString;
+  const queryParams: string[] = [];
+
+  // Add regular params
+  for (const p of enabledParams) {
+    queryParams.push(`${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`);
+  }
+
+  // Add API Key as query param if configured
+  if (request.auth.type === 'apikey' && request.auth.apikey?.addTo === 'query') {
+    const key = request.auth.apikey.key || 'api_key';
+    queryParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(request.auth.apikey.value)}`);
+  }
+
+  if (queryParams.length > 0) {
+    url += (url.includes('?') ? '&' : '?') + queryParams.join('&');
   }
   return url;
 }
@@ -89,12 +101,24 @@ function buildHeaders(request: HttpRequest): Record<string, unknown> {
     addHeader(header.key, header.value);
   }
 
+  // Handle different auth types
   if (request.auth.type === 'basic' && request.auth.basic) {
     const credentials = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString('base64');
     addHeader('Authorization', `Basic ${credentials}`);
   } else if (request.auth.type === 'bearer' && request.auth.bearer) {
     addHeader('Authorization', `Bearer ${request.auth.bearer.token}`);
+  } else if (request.auth.type === 'apikey' && request.auth.apikey) {
+    // API Key auth - add to header if addTo is 'header'
+    if (request.auth.apikey.addTo === 'header') {
+      const headerName = request.auth.apikey.key || 'X-API-Key';
+      addHeader(headerName, request.auth.apikey.value);
+    }
+    // Query params are handled in buildUrlWithParams
+  } else if (request.auth.type === 'digest' && request.auth.digest) {
+    // Digest auth is handled by httpyac via meta tags
+    // We'll add a placeholder that httpyac will process
   }
+  // AWS and OAuth2 are handled via meta tags in convertRequestToHttpContent
 
   return headers;
 }
@@ -254,9 +278,11 @@ export function convertRequestToHttpContent(request: HttpRequest): string {
   const metaLines = buildMetaLines(request.meta);
   lines.push(...metaLines);
 
+  // Handle auth type meta tags
+  const hasMeta = (key: string) =>
+    (request.meta || []).some(item => item.enabled && normalizeMetaKey(item.key).toLowerCase() === key.toLowerCase());
+
   if (request.auth.type === 'oauth2' && request.auth.oauth2) {
-    const hasMeta = (key: string) =>
-      (request.meta || []).some(item => item.enabled && normalizeMetaKey(item.key).toLowerCase() === key.toLowerCase());
     if (!hasMeta('oauth2')) {
       lines.push(`# @oauth2 ${request.auth.oauth2.grantType}`);
     }
@@ -268,6 +294,35 @@ export function convertRequestToHttpContent(request: HttpRequest): string {
     }
     if (request.auth.oauth2.scope && !hasMeta('scope')) {
       lines.push(`# @scope ${request.auth.oauth2.scope}`);
+    }
+  }
+
+  // Digest auth via meta
+  if (request.auth.type === 'digest' && request.auth.digest) {
+    if (!hasMeta('digest')) {
+      lines.push(`# @digest ${request.auth.digest.username} ${request.auth.digest.password}`);
+    }
+  }
+
+  // AWS Signature auth via meta
+  if (request.auth.type === 'aws' && request.auth.aws) {
+    if (!hasMeta('awsSignature')) {
+      lines.push(`# @awsSignature`);
+    }
+    if (!hasMeta('awsAccessKeyId') && request.auth.aws.accessKeyId) {
+      lines.push(`# @awsAccessKeyId ${request.auth.aws.accessKeyId}`);
+    }
+    if (!hasMeta('awsSecretAccessKey') && request.auth.aws.secretAccessKey) {
+      lines.push(`# @awsSecretAccessKey ${request.auth.aws.secretAccessKey}`);
+    }
+    if (!hasMeta('awsRegion') && request.auth.aws.region) {
+      lines.push(`# @awsRegion ${request.auth.aws.region}`);
+    }
+    if (!hasMeta('awsService') && request.auth.aws.service) {
+      lines.push(`# @awsService ${request.auth.aws.service}`);
+    }
+    if (request.auth.aws.sessionToken && !hasMeta('awsSessionToken')) {
+      lines.push(`# @awsSessionToken ${request.auth.aws.sessionToken}`);
     }
   }
 
