@@ -1,6 +1,8 @@
+/* eslint-env browser */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from '@/components/ui';
 import { KeyValueEditor, BodyEditor, AuthEditor, MethodSelect } from '@/components/request';
+import { CodeEditor } from '@/components/common/CodeEditor';
 import { ResponseViewer } from '@/components/response';
 import { useStore, useEditorMessages } from '@/hooks';
 import { Save, Code, Copy } from 'lucide-react';
@@ -11,7 +13,7 @@ import { parseHeaderLines, parseParamText, parseCurlHeaders, parseCurlParams, ex
 // Declare global window property for initial request
 declare global {
   interface Window {
-    __INITIAL_REQUEST__?: HttpRequest;
+    ['__INITIAL_REQUEST__']?: HttpRequest;
   }
 }
 
@@ -104,6 +106,7 @@ export const EditorApp: React.FC = () => {
   const [metaMode, setMetaMode] = useState<'quick' | 'advanced'>('quick');
   const [lastSentAt, setLastSentAt] = useState<number | null>(null);
   const [requestTab, setRequestTab] = useState<'meta' | 'params' | 'auth' | 'headers' | 'body' | 'scripts'>('params');
+  const [scriptTab, setScriptTab] = useState<'pre' | 'post'>('pre');
   const isMac = navigator.platform.toLowerCase().includes('mac');
   const source = currentRequest.source;
   const sourceFileName = source?.filePath ? source.filePath.split(/[/\\\\]/u).pop() || source.filePath : '';
@@ -119,11 +122,12 @@ export const EditorApp: React.FC = () => {
   // Initialize on mount and load initial request if present
   useEffect(() => {
     // Check for initial request embedded in HTML
-    if (window.__INITIAL_REQUEST__) {
-      console.log('[EditorApp] Loading initial request:', window.__INITIAL_REQUEST__);
-      setCurrentRequest(window.__INITIAL_REQUEST__);
+    const initialRequest = window['__INITIAL_REQUEST__'];
+    if (initialRequest) {
+      console.log('[EditorApp] Loading initial request:', initialRequest);
+      setCurrentRequest(initialRequest);
       // Clear it so it doesn't reload on re-render
-      delete window.__INITIAL_REQUEST__;
+      delete window['__INITIAL_REQUEST__'];
     }
     
     notifyReady();
@@ -318,13 +322,50 @@ export const EditorApp: React.FC = () => {
     return base ? `${base}\n\n${snippet}` : snippet;
   };
 
-  const insertPreRequestSnippet = (snippet: string) => {
-    setPreRequestScript(appendSnippet(currentRequest.preRequestScript, snippet));
-  };
+  const scriptMenu = [
+    {
+      id: 'pre',
+      label: 'Pre-request',
+      description: 'Runs before request',
+      hasContent: Boolean(currentRequest.preRequestScript?.trim()),
+    },
+    {
+      id: 'post',
+      label: 'Post-request',
+      description: 'Runs after response',
+      hasContent: Boolean(currentRequest.testScript?.trim()),
+    },
+  ] as const;
 
-  const insertTestSnippet = (snippet: string) => {
-    setTestScript(appendSnippet(currentRequest.testScript, snippet));
-  };
+  const activeScript =
+    scriptTab === 'pre'
+      ? {
+          title: 'Pre-request Script',
+          value: currentRequest.preRequestScript || '',
+          placeholder: '// Runs before request\n',
+          description: '在发送请求前执行，可用于准备变量或设置环境。',
+          snippets: PRE_REQUEST_SNIPPETS,
+          onChange: setPreRequestScript,
+        }
+      : {
+          title: 'Post-request Script',
+          value: currentRequest.testScript || '',
+          placeholder: '// Runs after response\n',
+          description: '在收到响应后执行，可用于断言与变量提取。',
+          snippets: TEST_SNIPPETS,
+          onChange: setTestScript,
+        };
+
+  const scriptStats = useMemo(() => {
+    const content = activeScript.value || '';
+    const trimmed = content.trim();
+    const lines = trimmed ? trimmed.split(/\r?\n/u).length : 0;
+    return {
+      lines,
+      chars: content.length,
+      empty: !trimmed,
+    };
+  }, [activeScript.value]);
 
   const handleCopyResponse = () => {
     if (!currentResponse) {
@@ -816,60 +857,94 @@ export const EditorApp: React.FC = () => {
               </TabsContent>
 
               <TabsContent value="scripts" className="m-0 p-4 h-full">
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)]">
-                        Pre-request Script
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {PRE_REQUEST_SNIPPETS.map(snippet => (
-                          <Button
-                            key={snippet.label}
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[10px]"
-                            onClick={() => insertPreRequestSnippet(snippet.content)}
-                          >
-                            {snippet.label}
-                          </Button>
-                        ))}
-                      </div>
+                <div className="flex h-full gap-4">
+                  <div className="w-52 shrink-0 flex flex-col gap-3">
+                    <div className="text-[10px] uppercase tracking-wide text-[var(--vscode-descriptionForeground)]">
+                      Scripts
                     </div>
-                    <textarea
-                      value={currentRequest.preRequestScript || ''}
-                      onChange={(e) => setPreRequestScript(e.target.value)}
-                      placeholder="Run before request (JS)"
-                      className="code-area w-full min-h-[140px]"
-                      spellCheck={false}
-                    />
+                    <div className="ui-card p-2 space-y-1">
+                      {scriptMenu.map(item => {
+                        const active = scriptTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => setScriptTab(item.id)}
+                            className={`w-full text-left px-3 py-2 rounded border text-xs transition-colors ${
+                              active
+                                ? 'bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)] border-[var(--vscode-focusBorder)]'
+                                : 'bg-[var(--vscode-editor-background)] text-[var(--vscode-foreground)] border-[var(--vscode-input-border)] hover:bg-[var(--vscode-list-hoverBackground)]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium">{item.label}</span>
+                              {item.hasContent ? (
+                                <span
+                                  className={`text-[10px] ${
+                                    active ? 'opacity-90' : 'text-[var(--vscode-descriptionForeground)]'
+                                  }`}
+                                >
+                                  ●
+                                </span>
+                              ) : null}
+                            </div>
+                            <div
+                              className={`text-[10px] ${
+                                active ? 'opacity-90' : 'text-[var(--vscode-descriptionForeground)]'
+                              }`}
+                            >
+                              {item.description}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="ui-card p-3 text-[10px] text-[var(--vscode-descriptionForeground)] space-y-1">
+                      <div>脚本将被写入 .http 的 &gt; {'{% %}'} 块。</div>
+                      <div>支持 console.log 输出运行日志。</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)]">
-                        Test Script
+                  <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-medium text-[var(--vscode-descriptionForeground)]">
+                          {activeScript.title}
+                        </div>
+                        <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                          {activeScript.description}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {TEST_SNIPPETS.map(snippet => (
+                      <div className="text-[10px] text-[var(--vscode-descriptionForeground)] whitespace-nowrap">
+                        行 {scriptStats.lines} · 字符 {scriptStats.chars}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                        {scriptStats.empty ? '暂无脚本，先从片段开始。' : '可从片段快速补全常用逻辑。'}
+                      </div>
+                      <div className="flex items-center gap-1 overflow-x-auto">
+                        {activeScript.snippets.map(snippet => (
                           <Button
                             key={snippet.label}
                             variant="ghost"
                             size="sm"
                             className="h-6 px-2 text-[10px]"
-                            onClick={() => insertTestSnippet(snippet.content)}
+                            onClick={() => activeScript.onChange(appendSnippet(activeScript.value, snippet.content))}
                           >
                             {snippet.label}
                           </Button>
                         ))}
                       </div>
                     </div>
-                    <textarea
-                      value={currentRequest.testScript || ''}
-                      onChange={(e) => setTestScript(e.target.value)}
-                      placeholder="Run after response (JS)"
-                      className="code-area w-full min-h-[160px]"
-                      spellCheck={false}
-                    />
+                    <div className="flex-1 min-h-0">
+                      <CodeEditor
+                        value={activeScript.value}
+                        language="javascript"
+                        placeholder={activeScript.placeholder}
+                        onChange={activeScript.onChange}
+                        minHeight={320}
+                        fill
+                      />
+                    </div>
                   </div>
                 </div>
               </TabsContent>

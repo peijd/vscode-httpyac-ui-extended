@@ -9,16 +9,18 @@ import {
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { json } from '@codemirror/lang-json';
+import { javascript } from '@codemirror/lang-javascript';
 import { linter, lintGutter, Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
 interface CodeEditorProps {
   value: string;
-  language?: 'json' | 'text';
+  language?: 'json' | 'text' | 'javascript';
   readOnly?: boolean;
   minHeight?: number;
   maxHeight?: number;
+  fill?: boolean;
   placeholder?: string;
   onChange?: (value: string) => void;
   onFormat?: () => void;
@@ -80,26 +82,36 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   readOnly = false,
   minHeight = 240,
   maxHeight,
+  fill = false,
   placeholder,
   onChange,
   onFormat,
 }) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<React.ElementRef<'div'> | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastValueRef = useRef<string>(value);
 
   const extensions = useMemo<Extension[]>(() => {
+    let editorHeight = 'auto';
+    if (fill) {
+      editorHeight = '100%';
+    } else if (maxHeight) {
+      editorHeight = `${maxHeight}px`;
+    }
+
     const editorTheme = EditorView.theme(
       {
         '&': {
           backgroundColor: 'var(--vscode-input-background)',
           color: 'var(--vscode-editor-foreground, var(--vscode-foreground))',
-          height: maxHeight ? `${maxHeight}px` : 'auto',
+          height: editorHeight,
+          minHeight: `${minHeight}px`,
         },
         '.cm-scroller': {
           fontFamily: 'var(--vscode-editor-font-family, Consolas, Monaco, monospace)',
           fontSize: 'var(--vscode-editor-font-size, 13px)',
           lineHeight: '1.5',
+          height: fill ? '100%' : 'auto',
         },
         '.cm-content': {
           minHeight: `${minHeight}px`,
@@ -142,6 +154,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       base.push(json(), jsonLinter, lintGutter());
     }
 
+    if (language === 'javascript') {
+      base.push(javascript({ typescript: false }));
+    }
+
     if (readOnly) {
       base.push(EditorState.readOnly.of(true));
     }
@@ -151,33 +167,35 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
 
     return base;
-  }, [language, maxHeight, minHeight, onFormat, placeholder, readOnly]);
+  }, [fill, language, maxHeight, minHeight, onFormat, placeholder, readOnly]);
 
   useEffect(() => {
-    if (!containerRef.current) {
-      return;
+    let view: EditorView | null = null;
+    if (containerRef.current) {
+      const startState = EditorState.create({
+        doc: value,
+        extensions: [
+          ...extensions,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              const text = update.state.doc.toString();
+              lastValueRef.current = text;
+              onChange?.(text);
+            }
+          }),
+        ],
+      });
+      view = new EditorView({
+        state: startState,
+        parent: containerRef.current,
+      });
+      viewRef.current = view;
     }
-    const startState = EditorState.create({
-      doc: value,
-      extensions: [
-        ...extensions,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            const text = update.state.doc.toString();
-            lastValueRef.current = text;
-            onChange?.(text);
-          }
-        }),
-      ],
-    });
-    const view = new EditorView({
-      state: startState,
-      parent: containerRef.current,
-    });
-    viewRef.current = view;
 
     return () => {
-      view.destroy();
+      if (view) {
+        view.destroy();
+      }
       viewRef.current = null;
     };
   }, [extensions, onChange]);

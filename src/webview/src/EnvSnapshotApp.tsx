@@ -13,7 +13,7 @@ function formatTime(value?: number): string {
 function renderKeyValues(vars: Record<string, string> | undefined): React.ReactNode {
   const entries = vars ? Object.entries(vars) : [];
   if (entries.length === 0) {
-    return <div className="text-xs text-[var(--vscode-descriptionForeground)]">无</div>;
+    return <div className="text-xs text-[var(--vscode-descriptionForeground)]">None</div>;
   }
   return (
     <div className="space-y-2 text-xs">
@@ -35,7 +35,7 @@ function renderEnvironment(env: EnvironmentSnapshotEntry, active: string[]): Rea
         <div className="font-semibold">{env.name}</div>
         {isActive ? (
           <span className="rounded-full bg-[var(--vscode-badge-background)] px-2 py-0.5 text-[10px] text-[var(--vscode-badge-foreground)]">
-            当前
+            Active
           </span>
         ) : null}
       </div>
@@ -59,7 +59,7 @@ export const EnvSnapshotApp: React.FC = () => {
 
   const activeLabel = useMemo(() => {
     if (!snapshot?.active || snapshot.active.length === 0) {
-      return '未选择环境';
+      return 'No environment selected';
     }
     return snapshot.active.join(', ');
   }, [snapshot?.active]);
@@ -71,30 +71,30 @@ export const EnvSnapshotApp: React.FC = () => {
     <div className="flex min-h-screen flex-col gap-3 p-3">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm font-semibold">环境快照</div>
+          <div className="text-sm font-semibold">Environment Snapshot</div>
           <div className="text-xs text-[var(--vscode-descriptionForeground)]">
-            上次更新：{formatTime(snapshot?.updatedAt)}
+            Last updated: {formatTime(snapshot?.updatedAt)}
           </div>
         </div>
         <Button size="sm" variant="secondary" onClick={() => postMessage('getEnvironmentSnapshot')}>
-          刷新
+          Refresh
         </Button>
       </div>
 
       <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-xs">
-        <div className="text-[var(--vscode-descriptionForeground)]">当前环境</div>
+        <div className="text-[var(--vscode-descriptionForeground)]">Active Environment</div>
         <div className="mt-1 font-medium">{activeLabel}</div>
       </div>
 
       <Separator />
 
       <div className="space-y-2">
-        <div className="text-sm font-semibold">运行时变量（含脚本设置）</div>
+        <div className="text-sm font-semibold">Runtime Variables (including script settings)</div>
         <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
           <ScrollArea className="max-h-[240px]">
             {runtimeEmpty ? (
               <div className="text-xs text-[var(--vscode-descriptionForeground)]">
-                暂无运行时变量（可能尚未执行请求）
+                No runtime variables (may not have executed a request yet)
               </div>
             ) : (
               renderKeyValues(runtimeVariables)
@@ -106,12 +106,12 @@ export const EnvSnapshotApp: React.FC = () => {
       <Separator />
 
       <div className="space-y-2">
-        <div className="text-sm font-semibold">环境变量</div>
+        <div className="text-sm font-semibold">Environment Variables</div>
         <div className="space-y-3">
           {snapshot?.environments && snapshot.environments.length > 0 ? (
             snapshot.environments.map(env => renderEnvironment(env, snapshot.active))
           ) : (
-            <div className="text-xs text-[var(--vscode-descriptionForeground)]">未找到环境配置</div>
+            <div className="text-xs text-[var(--vscode-descriptionForeground)]">No environment configuration found</div>
           )}
         </div>
       </div>
