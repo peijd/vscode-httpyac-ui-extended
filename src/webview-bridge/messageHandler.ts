@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as httpyac from 'httpyac';
-import type { HarRequest, TargetId } from 'httpsnippet';
+import type { HarRequest } from 'httpsnippet';
+import type { TargetId } from 'httpsnippet/dist/targets/targets';
 import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
 import { commands, getConfigSetting, getEnvironmentConfig } from '../config';
