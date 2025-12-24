@@ -4,4 +4,5 @@ export { KeyValueEditor } from './KeyValueEditor';
 export { BodyEditor } from './BodyEditor';
 export { AuthEditor } from './AuthEditor';
 export { UrlBar } from './UrlBar';
+export { CodeGenerator } from './CodeGenerator';
 

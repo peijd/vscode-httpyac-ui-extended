@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as httpyac from 'httpyac';
+import type { HarRequest, TargetId } from 'httpsnippet';
 import { DocumentStore } from '../documentStore';
 import { ResponseStore } from '../responseStore';
 import { commands, getConfigSetting, getEnvironmentConfig } from '../config';
@@ -15,6 +16,7 @@ import type {
   BatchRunRequest,
   BatchRunSummary,
   BatchRunFileResult,
+  FailureBehavior,
 } from './messageTypes';
 import {
   computeHttpRegionSourceHash,
@@ -138,6 +140,13 @@ export class WebviewMessageHandler implements vscode.Disposable {
       case 'getRunnerResults':
         await this.broadcastRunnerResults(webview);
         break;
+      case 'generateCode':
+        await this.handleGenerateCode(
+          message.payload as { request: HttpRequest; target: string; client: string },
+          webview,
+          message.requestId
+        );
+        break;
       case 'ready':
         await Promise.all([
           this.broadcastEnvironmentState(webview),
@@ -168,6 +177,120 @@ export class WebviewMessageHandler implements vscode.Disposable {
         {
           type: 'requestError',
           payload: message,
+          requestId,
+        },
+        webview
+      );
+    }
+  }
+
+  private async handleGenerateCode(
+    payload: { request: HttpRequest; target: string; client: string },
+    webview: vscode.Webview,
+    requestId?: string
+  ): Promise<void> {
+    try {
+      const { request, target, client } = payload;
+
+      // Import httpsnippet dynamically
+      const { HTTPSnippet } = await import('httpsnippet');
+
+      // Build HAR request from HttpRequest
+      const headers = request.headers.filter(h => h.enabled && h.key).map(h => ({ name: h.key, value: h.value }));
+
+      // Add auth headers
+      if (request.auth.type === 'basic' && request.auth.basic) {
+        const credentials = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString(
+          'base64'
+        );
+        headers.push({ name: 'Authorization', value: `Basic ${credentials}` });
+      } else if (request.auth.type === 'bearer' && request.auth.bearer) {
+        headers.push({ name: 'Authorization', value: `Bearer ${request.auth.bearer.token}` });
+      } else if (request.auth.type === 'apikey' && request.auth.apikey?.addTo === 'header') {
+        const headerName = request.auth.apikey.key || 'X-API-Key';
+        headers.push({ name: headerName, value: request.auth.apikey.value });
+      }
+
+      // Build URL with query params
+      const url = request.url || '';
+      const queryParams: Array<{ name: string; value: string }> = [];
+      for (const param of request.params.filter(p => p.enabled && p.key)) {
+        queryParams.push({ name: param.key, value: param.value });
+      }
+      // Add API Key as query param if configured
+      if (request.auth.type === 'apikey' && request.auth.apikey?.addTo === 'query') {
+        const key = request.auth.apikey.key || 'api_key';
+        queryParams.push({ name: key, value: request.auth.apikey.value });
+      }
+
+      const harRequest: Partial<HarRequest> = {
+        method: request.method,
+        url,
+        headers,
+        queryString: queryParams,
+      };
+
+      // Add body
+      if (request.body.type !== 'none') {
+        let bodyContent = '';
+        let mimeType = 'application/json';
+
+        if (request.body.type === 'form' || request.body.type === 'formdata') {
+          bodyContent = (request.body.formData || [])
+            .filter(f => f.enabled && f.key)
+            .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value)}`)
+            .join('&');
+          mimeType = 'application/x-www-form-urlencoded';
+        } else {
+          bodyContent = request.body.content || '';
+          const contentTypeHeader = headers.find(h => h.name.toLowerCase() === 'content-type');
+          if (contentTypeHeader) {
+            mimeType = contentTypeHeader.value;
+          }
+        }
+
+        if (bodyContent) {
+          if (mimeType === 'application/x-www-form-urlencoded') {
+            harRequest.postData = {
+              params: bodyContent.split('&').map(pair => {
+                const [name, value] = pair.split('=');
+                return { name: decodeURIComponent(name || ''), value: decodeURIComponent(value || '') };
+              }),
+              mimeType,
+            };
+          } else {
+            harRequest.postData = {
+              text: bodyContent,
+              mimeType,
+            };
+          }
+        }
+      }
+
+      const snippet = new HTTPSnippet(harRequest as HarRequest);
+      const result = snippet.convert(target as TargetId, client);
+
+      let code = '';
+      if (Array.isArray(result)) {
+        code = result.join('\n');
+      } else if (result) {
+        code = result;
+      }
+
+      this.postMessage(
+        {
+          type: 'codeGenerated',
+          payload: { code, target, client },
+          requestId,
+        },
+        webview
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate code';
+      this.postMessage(
+        {
+          type: 'codeGenerated',
+          payload: { code: `// Error: ${errorMessage}`, target: payload.target, client: payload.client },
           requestId,
         },
         webview
@@ -592,6 +715,63 @@ export class WebviewMessageHandler implements vscode.Disposable {
     }
 
     const label = payload?.label?.trim() || 'Collection';
+    const options = payload?.options || {};
+    const iterations = Math.max(1, options.iterations || 1);
+    const delayMs = Math.max(0, options.delayMs || 0);
+    const failureBehavior: FailureBehavior = options.failureBehavior || 'continue';
+
+    const config = getConfigSetting();
+    const progressLocation =
+      config.progressDefaultLocation === 'window'
+        ? vscode.ProgressLocation.Window
+        : vscode.ProgressLocation.Notification;
+
+    for (let iteration = 1; iteration <= iterations; iteration++) {
+      const iterationSummary = await this.runSingleIteration(
+        iteration,
+        iterations,
+        label,
+        filePaths,
+        options,
+        delayMs,
+        failureBehavior,
+        progressLocation
+      );
+
+      this.runnerResults.unshift(iterationSummary.summary);
+      this.runnerResults.splice(50); // Keep more results for iteration runs
+      await this.broadcastRunnerResults();
+
+      if (iterationSummary.shouldStop) {
+        break;
+      }
+
+      // Delay between iterations (not after last iteration)
+      if (delayMs > 0 && iteration < iterations) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    await vscode.commands.executeCommand(commands.openRunnerResults);
+
+    const latestResult = this.runnerResults[0];
+    const message =
+      iterations > 1
+        ? `Runner finished ${iterations} iterations: ${latestResult?.totalRequests || 0} requests per iteration.`
+        : `Runner finished: ${latestResult?.totalRequests || 0} requests, ${latestResult?.failedRequests || 0} failed.`;
+    await vscode.window.showInformationMessage(message);
+  }
+
+  private async runSingleIteration(
+    iteration: number,
+    totalIterations: number,
+    label: string,
+    filePaths: string[],
+    options: { iterations?: number; delayMs?: number; failureBehavior?: FailureBehavior },
+    delayMs: number,
+    failureBehavior: FailureBehavior,
+    progressLocation: vscode.ProgressLocation
+  ): Promise<{ summary: BatchRunSummary; shouldStop: boolean }> {
     const startedAt = Date.now();
     const results: BatchRunFileResult[] = [];
     const counters = {
@@ -600,23 +780,21 @@ export class WebviewMessageHandler implements vscode.Disposable {
       totalTests: 0,
       failedTests: 0,
     };
+    // Use object reference to avoid no-loop-func issues
+    const stopState = { stopAll: false, stopFile: false };
 
-    const config = getConfigSetting();
-    const progressLocation =
-      config.progressDefaultLocation === 'window'
-        ? vscode.ProgressLocation.Window
-        : vscode.ProgressLocation.Notification;
+    const iterLabel = totalIterations > 1 ? `${label} (${iteration}/${totalIterations})` : label;
 
     await vscode.window.withProgress(
       {
         location: progressLocation,
         cancellable: true,
-        title: `Runner: ${label}`,
+        title: `Runner: ${iterLabel}`,
       },
       async (progress, token) => {
         const increment = 100 / filePaths.length;
         for (const filePath of filePaths) {
-          if (token.isCancellationRequested) {
+          if (token.isCancellationRequested || stopState.stopAll) {
             break;
           }
           const uri = vscode.Uri.file(filePath);
@@ -630,6 +808,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
           };
 
           const fileStart = Date.now();
+          stopState.stopFile = false;
           try {
             const httpFile = await this.documentStore.getWithUri(uri);
             const context: httpyac.HttpFileSendContext = {
@@ -637,19 +816,39 @@ export class WebviewMessageHandler implements vscode.Disposable {
             };
             context.progress = {
               divider: 1,
-              isCanceled: () => token.isCancellationRequested,
+              isCanceled: () => token.isCancellationRequested || stopState.stopFile || stopState.stopAll,
               register: (event: () => void) => {
                 const dispose = token.onCancellationRequested(event);
                 return () => dispose.dispose();
               },
               report: data => progress.report(data),
             };
-            context.logResponse = this.createRunnerLogResponse(fileResult, filePath, counters);
+            context.logResponse = this.createRunnerLogResponseWithControl(
+              fileResult,
+              filePath,
+              counters,
+              failureBehavior,
+              stopState
+            );
 
             await this.documentStore.send(context);
+
+            // Apply delay between requests (not after last file)
+            if (
+              delayMs > 0 &&
+              filePath !== filePaths[filePaths.length - 1] &&
+              !stopState.stopFile &&
+              !stopState.stopAll
+            ) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            fileResult.error = message;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            fileResult.error = errorMessage;
+            counters.failedRequests += 1;
+            if (failureBehavior === 'stopAll') {
+              stopState.stopAll = true;
+            }
           } finally {
             fileResult.durationMs = Date.now() - fileStart;
             results.push(fileResult);
@@ -660,7 +859,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
 
     const finishedAt = Date.now();
     const summary: BatchRunSummary = {
-      label,
+      label: iterLabel,
       startedAt,
       finishedAt,
       durationMs: finishedAt - startedAt,
@@ -669,19 +868,15 @@ export class WebviewMessageHandler implements vscode.Disposable {
       totalTests: counters.totalTests,
       failedTests: counters.failedTests,
       files: results,
+      options,
+      iteration,
+      totalIterations,
     };
 
-    this.runnerResults.unshift(summary);
-    this.runnerResults.splice(20);
-    await this.broadcastRunnerResults();
-
-    await vscode.commands.executeCommand(commands.openRunnerResults);
-
-    const message = `Runner finished: ${counters.totalRequests} requests, ${counters.failedRequests} failed.`;
-    await vscode.window.showInformationMessage(message);
+    return { summary, shouldStop: stopState.stopAll };
   }
 
-  private createRunnerLogResponse(
+  private createRunnerLogResponseWithControl(
     fileResult: BatchRunFileResult,
     filePath: string,
     counters: {
@@ -689,7 +884,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
       failedRequests: number;
       totalTests: number;
       failedTests: number;
-    }
+    },
+    failureBehavior: FailureBehavior,
+    stopState: { stopFile: boolean; stopAll: boolean }
   ): (response?: httpyac.HttpResponse, httpRegion?: httpyac.HttpRegion) => Promise<void> {
     return async (response, httpRegion) => {
       if (!response || !httpRegion) {
@@ -726,6 +923,15 @@ export class WebviewMessageHandler implements vscode.Disposable {
       });
 
       await this.responseStore.add(response, httpRegion, false);
+
+      // Handle failure behavior
+      if (!isSuccess) {
+        if (failureBehavior === 'stopFile') {
+          stopState.stopFile = true;
+        } else if (failureBehavior === 'stopAll') {
+          stopState.stopAll = true;
+        }
+      }
     };
   }
 

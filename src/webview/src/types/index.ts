@@ -11,7 +11,7 @@ export interface KeyValue {
 }
 
 // Authentication types
-export type AuthType = 'none' | 'basic' | 'bearer' | 'oauth2';
+export type AuthType = 'none' | 'basic' | 'bearer' | 'apikey' | 'digest' | 'oauth2' | 'aws';
 
 export interface AuthConfig {
   type: AuthType;
@@ -22,12 +22,30 @@ export interface AuthConfig {
   bearer?: {
     token: string;
   };
+  apikey?: {
+    key: string;
+    value: string;
+    addTo: 'header' | 'query';
+    headerName?: string; // Custom header name, defaults to 'X-API-Key'
+  };
+  digest?: {
+    username: string;
+    password: string;
+    realm?: string;
+  };
   oauth2?: {
     grantType: 'client_credentials' | 'authorization_code' | 'password';
     tokenUrl: string;
     clientId: string;
     clientSecret: string;
     scope?: string;
+  };
+  aws?: {
+    accessKeyId: string;
+    secretAccessKey: string;
+    region: string;
+    service: string;
+    sessionToken?: string;
   };
 }
 
@@ -103,9 +121,18 @@ export interface CollectionItem {
   httpFilePath?: string;
 }
 
+export type FailureBehavior = 'continue' | 'stopFile' | 'stopAll';
+
+export interface BatchRunOptions {
+  iterations?: number;
+  delayMs?: number;
+  failureBehavior?: FailureBehavior;
+}
+
 export interface BatchRunRequest {
   label?: string;
   filePaths: string[];
+  options?: BatchRunOptions;
 }
 
 export interface BatchRunEntry {
@@ -140,6 +167,9 @@ export interface BatchRunSummary {
   totalTests: number;
   failedTests: number;
   files: BatchRunFileResult[];
+  options?: BatchRunOptions;
+  iteration?: number;
+  totalIterations?: number;
 }
 
 // Environment
@@ -207,6 +237,8 @@ export type MessageType =
   | 'runnerResultsUpdated'
   | 'setRequest'
   | 'showNotification'
+  | 'generateCode'
+  | 'codeGenerated'
   | 'ready';
 
 export interface Message<T = unknown> {

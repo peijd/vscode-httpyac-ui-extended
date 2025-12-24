@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, ScrollArea, Button } from '@/components/ui';
 import { useStore, useVsCodeMessages } from '@/hooks';
-import type { BatchRunEntry, BatchRunSummary, KeyValue } from '@/types';
+import type { BatchRunEntry, BatchRunSummary, KeyValue, BatchRunOptions, FailureBehavior } from '@/types';
 import { cn } from '@/lib/utils';
+import { Download, Settings, Play, X } from 'lucide-react';
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString();
@@ -80,10 +81,78 @@ function summaryKey(summary: BatchRunSummary, index: number): string {
   return `${summary.startedAt}-${summary.label}-${index}`;
 }
 
+function exportAsJson(summary: BatchRunSummary): void {
+  const content = JSON.stringify(summary, null, 2);
+  const blob = new Blob([content], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `runner-report-${summary.label.replace(/[^a-zA-Z0-9]/g, '_')}-${summary.startedAt}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportAsMarkdown(summary: BatchRunSummary): void {
+  const lines: string[] = [];
+  lines.push(`# Runner Report: ${summary.label}`);
+  lines.push('');
+  lines.push(`**Started:** ${formatDate(summary.startedAt)}`);
+  lines.push(`**Finished:** ${formatDate(summary.finishedAt)}`);
+  lines.push(`**Duration:** ${formatDuration(summary.durationMs)}`);
+  if (summary.totalIterations && summary.totalIterations > 1) {
+    lines.push(`**Iteration:** ${summary.iteration} of ${summary.totalIterations}`);
+  }
+  lines.push('');
+  lines.push('## Summary');
+  lines.push('');
+  lines.push(`| Metric | Value |`);
+  lines.push(`|--------|-------|`);
+  lines.push(`| Total Requests | ${summary.totalRequests} |`);
+  lines.push(`| Failed Requests | ${summary.failedRequests} |`);
+  lines.push(`| Total Tests | ${summary.totalTests} |`);
+  lines.push(`| Failed Tests | ${summary.failedTests} |`);
+  lines.push('');
+  lines.push('## Files');
+  lines.push('');
+  for (const file of summary.files) {
+    lines.push(`### ${formatPath(file.filePath)}`);
+    lines.push('');
+    lines.push(`Duration: ${formatDuration(file.durationMs)}`);
+    if (file.error) {
+      lines.push(``);
+      lines.push(`**Error:** ${file.error}`);
+    }
+    lines.push('');
+    lines.push(`| Request | Method | Status | Duration | Tests |`);
+    lines.push(`|---------|--------|--------|----------|-------|`);
+    for (const entry of file.entries) {
+      const testInfo = entry.testTotal ? `${entry.testFailed}/${entry.testTotal}` : '-';
+      lines.push(`| ${entry.name} | ${entry.method || '-'} | ${entry.status || '-'} | ${formatDuration(entry.durationMs)} | ${testInfo} |`);
+    }
+    lines.push('');
+  }
+  const content = lines.join('\n');
+  const blob = new Blob([content], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `runner-report-${summary.label.replace(/[^a-zA-Z0-9]/g, '_')}-${summary.startedAt}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const DEFAULT_OPTIONS: BatchRunOptions = {
+  iterations: 1,
+  delayMs: 0,
+  failureBehavior: 'continue',
+};
+
 export const RunnerApp: React.FC = () => {
   const { runnerResults } = useStore();
   const { notifyReady, requestRunnerResults, runCollection } = useVsCodeMessages();
   const [filter, setFilter] = useState<'all' | 'failed' | 'passed' | 'testFailed'>('all');
+  const [showOptions, setShowOptions] = useState(false);
+  const [runOptions, setRunOptions] = useState<BatchRunOptions>(DEFAULT_OPTIONS);
 
   useEffect(() => {
     notifyReady();
@@ -123,13 +192,19 @@ export const RunnerApp: React.FC = () => {
     return entry.testFailed > 0;
   };
 
-  const handleRunAgain = (summary: BatchRunSummary) => {
+  const handleRunAgain = useCallback((summary: BatchRunSummary) => {
     const filePaths = Array.from(new Set(summary.files.map(file => file.filePath)));
     if (filePaths.length === 0) {
       return;
     }
-    runCollection({ label: summary.label, filePaths });
-  };
+    // Re-use original options if available, otherwise use current options
+    const options = summary.options || runOptions;
+    runCollection({ label: summary.label.replace(/\s*\(\d+\/\d+\)$/u, ''), filePaths, options });
+  }, [runCollection, runOptions]);
+
+  const updateOption = useCallback(<K extends keyof BatchRunOptions>(key: K, value: BatchRunOptions[K]) => {
+    setRunOptions(prev => ({ ...prev, [key]: value }));
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-vscode-background text-vscode-foreground">
@@ -143,28 +218,101 @@ export const RunnerApp: React.FC = () => {
           <span className="ui-chip">Test Fail {filterStats.testFailed}</span>
         </div>
       </div>
-      <div className="ui-subbar px-3 py-2 flex items-center gap-2 text-xs">
-        <span className="text-[var(--vscode-descriptionForeground)]">Filter:</span>
-        {(
-          [
-            { key: 'all', label: 'All' },
-            { key: 'failed', label: 'Failed' },
-            { key: 'passed', label: 'Passed' },
-            { key: 'testFailed', label: 'Test Failed' },
-          ] as const
-        ).map(item => (
-          <button
-            key={item.key}
-            className={cn(
-              'runner-filter',
-              filter === item.key && 'runner-filter-active'
-            )}
-            onClick={() => setFilter(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="ui-subbar px-3 py-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-[var(--vscode-descriptionForeground)]">Filter:</span>
+          {(
+            [
+              { key: 'all', label: 'All' },
+              { key: 'failed', label: 'Failed' },
+              { key: 'passed', label: 'Passed' },
+              { key: 'testFailed', label: 'Test Failed' },
+            ] as const
+          ).map(item => (
+            <button
+              key={item.key}
+              className={cn(
+                'runner-filter',
+                filter === item.key && 'runner-filter-active'
+              )}
+              onClick={() => setFilter(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 gap-1"
+          onClick={() => setShowOptions(!showOptions)}
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Run Options
+        </Button>
       </div>
+
+      {showOptions && (
+        <div className="px-3 py-3 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editorWidget-background)]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium">Run Configuration</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setShowOptions(false)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--vscode-descriptionForeground)]">Iterations</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={runOptions.iterations || 1}
+                onChange={e => updateOption('iterations', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full px-2 py-1 text-xs bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded"
+              />
+              <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                Run collection multiple times
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--vscode-descriptionForeground)]">Delay (ms)</label>
+              <input
+                type="number"
+                min={0}
+                max={60000}
+                step={100}
+                value={runOptions.delayMs || 0}
+                onChange={e => updateOption('delayMs', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="w-full px-2 py-1 text-xs bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded"
+              />
+              <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                Delay between requests
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--vscode-descriptionForeground)]">On Failure</label>
+              <select
+                value={runOptions.failureBehavior || 'continue'}
+                onChange={e => updateOption('failureBehavior', e.target.value as FailureBehavior)}
+                className="w-full px-2 py-1 text-xs bg-[var(--vscode-input-background)] border border-[var(--vscode-input-border)] rounded"
+              >
+                <option value="continue">Continue</option>
+                <option value="stopFile">Stop current file</option>
+                <option value="stopAll">Stop all</option>
+              </select>
+              <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+                Behavior when request fails
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ScrollArea className="flex-1 p-3">
         {emptyState ? (
@@ -199,13 +347,41 @@ export const RunnerApp: React.FC = () => {
                     <div className="flex items-center justify-between mb-3">
                       <div className="text-xs text-[var(--vscode-descriptionForeground)]">
                         {summary.files.length} files · Finished {formatDate(summary.finishedAt)}
+                        {summary.totalIterations && summary.totalIterations > 1 && (
+                          <span className="ml-2">· Iteration {summary.iteration}/{summary.totalIterations}</span>
+                        )}
+                        {summary.options?.delayMs ? (
+                          <span className="ml-2">· Delay {summary.options.delayMs}ms</span>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => exportAsJson(summary)}
+                          title="Export as JSON"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          JSON
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => exportAsMarkdown(summary)}
+                          title="Export as Markdown"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          MD
+                        </Button>
+                        <Button
                           variant="secondary"
                           size="sm"
+                          className="gap-1"
                           onClick={() => handleRunAgain(summary)}
                         >
+                          <Play className="h-3.5 w-3.5" />
                           Run Again
                         </Button>
                       </div>

@@ -1,11 +1,11 @@
 /* eslint-env browser */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from '@/components/ui';
-import { KeyValueEditor, BodyEditor, AuthEditor, MethodSelect } from '@/components/request';
+import { KeyValueEditor, BodyEditor, AuthEditor, MethodSelect, CodeGenerator } from '@/components/request';
 import { CodeEditor } from '@/components/common/CodeEditor';
 import { ResponseViewer } from '@/components/response';
 import { useStore, useEditorMessages } from '@/hooks';
-import { Save, Code, Copy } from 'lucide-react';
+import { Save, Code, Copy, FileCode } from 'lucide-react';
 import type { HttpRequest, KeyValue } from '@/types';
 import { generateId } from '@/lib/utils';
 import { parseHeaderLines, parseParamText, parseCurlHeaders, parseCurlParams, extractCurlBaseUrl } from '@/lib/importParsers';
@@ -95,9 +95,14 @@ export const EditorApp: React.FC = () => {
     openSourceLocation,
     attachToHttpFile,
     getRequestText,
+    generateCode,
+    generatedCode,
+    isGeneratingCode,
+    clearGeneratedCode,
   } = useEditorMessages();
   const [splitRatio, setSplitRatio] = useState(50); // percentage for request panel
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [codeGenOpen, setCodeGenOpen] = useState(false);
   const [pendingRequestTextId, setPendingRequestTextId] = useState<string | null>(null);
   const [pendingRequestTextAction, setPendingRequestTextAction] = useState<'preview' | 'copy' | null>(null);
   const [requestTextLoading, setRequestTextLoading] = useState(false);
@@ -518,6 +523,15 @@ export const EditorApp: React.FC = () => {
               onClick={() => requestPreview('copy')}
             >
               <Copy className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Generate code snippet"
+              className="h-9 w-9 ui-hover"
+              onClick={() => setCodeGenOpen(true)}
+            >
+              <FileCode className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -1035,6 +1049,18 @@ export const EditorApp: React.FC = () => {
           </div>
         </div>
       ) : null}
+
+      <CodeGenerator
+        request={currentRequest}
+        isOpen={codeGenOpen}
+        onClose={() => {
+          setCodeGenOpen(false);
+          clearGeneratedCode();
+        }}
+        onGenerate={(target, client) => generateCode(target, client)}
+        generatedCode={generatedCode}
+        isGenerating={isGeneratingCode}
+      />
     </div>
   );
 };
