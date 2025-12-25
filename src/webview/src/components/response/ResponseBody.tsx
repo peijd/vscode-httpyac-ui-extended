@@ -8,9 +8,15 @@ interface ResponseBodyProps {
   body: string;
   contentType: string;
   viewMode?: 'structured' | 'raw' | 'preview' | 'pretty' | 'tree';
+  onSaveVariable?: (payload: { name: string; value: string; path: string }) => void;
 }
 
-export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, viewMode = 'structured' }) => {
+export const ResponseBody: React.FC<ResponseBodyProps> = ({
+  body,
+  contentType,
+  viewMode = 'structured',
+  onSaveVariable,
+}) => {
   const normalizedView: 'structured' | 'raw' | 'preview' =
     viewMode === 'pretty' || viewMode === 'tree' ? 'structured' : viewMode;
   const formattedBody = useMemo(() => {
@@ -61,7 +67,7 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
         </div>
       );
     }
-    return <JsonTreeViewer data={parsedJson} />;
+    return <JsonTreeViewer data={parsedJson} onSaveVariable={onSaveVariable} />;
   }
 
   if (normalizedView === 'structured') {
@@ -89,7 +95,10 @@ export const ResponseBody: React.FC<ResponseBodyProps> = ({ body, contentType, v
 };
 
 // JSON Tree Viewer with toolbar
-const JsonTreeViewer: React.FC<{ data: unknown }> = ({ data }) => {
+const JsonTreeViewer: React.FC<{ data: unknown; onSaveVariable?: ResponseBodyProps['onSaveVariable'] }> = ({
+  data,
+  onSaveVariable,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandAll, setExpandAll] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
@@ -117,6 +126,38 @@ const JsonTreeViewer: React.FC<{ data: unknown }> = ({ data }) => {
     setCopyFeedback('Value copied');
     setTimeout(() => setCopyFeedback(''), 2000);
   }, []);
+
+  const handleSaveVariable = useCallback(
+    (path: string, value: unknown) => {
+      if (!onSaveVariable) {
+        return;
+      }
+      const rawName = path
+        .replace(/^\$\./u, '')
+        .replace(/^\$/u, '')
+        .replace(/\[(\d+)\]/gu, '_$1')
+        .replace(/[^\w]+/gu, '_')
+        .replace(/^_+/u, '')
+        .replace(/_+$/u, '');
+      const suggested = rawName || 'value';
+      const name = window.prompt('Save as variable name', suggested);
+      if (!name) {
+        return;
+      }
+      let normalizedValue = '';
+      if (typeof value === 'string') {
+        normalizedValue = value;
+      } else if (value === null || value === undefined) {
+        normalizedValue = String(value);
+      } else {
+        normalizedValue = JSON.stringify(value, null, 2);
+      }
+      onSaveVariable({ name, value: normalizedValue, path });
+      setCopyFeedback(`Saved: ${name}`);
+      setTimeout(() => setCopyFeedback(''), 2000);
+    },
+    [onSaveVariable]
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -177,6 +218,7 @@ const JsonTreeViewer: React.FC<{ data: unknown }> = ({ data }) => {
           forceExpand={expandAll}
           onCopyPath={handleCopyPath}
           onCopyValue={handleCopyValue}
+          onSaveVariable={handleSaveVariable}
         />
       </div>
     </div>
@@ -192,6 +234,7 @@ interface JsonTreeNodeProps {
   forceExpand: boolean;
   onCopyPath: (path: string) => void;
   onCopyValue: (value: unknown) => void;
+  onSaveVariable?: (path: string, value: unknown) => void;
   keyName?: string;
   isArrayIndex?: boolean;
 }
@@ -204,6 +247,7 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
   forceExpand,
   onCopyPath,
   onCopyValue,
+  onSaveVariable,
 }) => {
   const [isExpanded, setIsExpanded] = useState(forceExpand || depth < 2);
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -236,13 +280,41 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
   // Render primitive values
   if (data === null) {
     return (
-      <span className="json-value json-null">null</span>
+      <span className="group inline-flex items-center gap-1">
+        <span className="json-value json-null">null</span>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveVariable(path, null);
+            }}
+            title="Save as variable"
+          >
+            <Copy className="h-3 w-3 text-[var(--vscode-descriptionForeground)]" />
+          </button>
+        ) : null}
+      </span>
     );
   }
 
   if (typeof data === 'undefined') {
     return (
-      <span className="json-value json-undefined">undefined</span>
+      <span className="group inline-flex items-center gap-1">
+        <span className="json-value json-undefined">undefined</span>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveVariable(path, undefined);
+            }}
+            title="Save as variable"
+          >
+            <Copy className="h-3 w-3 text-[var(--vscode-descriptionForeground)]" />
+          </button>
+        ) : null}
+      </span>
     );
   }
 
@@ -250,8 +322,22 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
     const displayValue = `"${data}"`;
     const isMatch = matchesSearch(data);
     return (
-      <span className={`json-value json-string ${isMatch ? 'json-match' : ''}`}>
-        {highlightMatch(displayValue)}
+      <span className="group inline-flex items-center gap-1">
+        <span className={`json-value json-string ${isMatch ? 'json-match' : ''}`}>
+          {highlightMatch(displayValue)}
+        </span>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveVariable(path, data);
+            }}
+            title="Save as variable"
+          >
+            <Copy className="h-3 w-3 text-[var(--vscode-descriptionForeground)]" />
+          </button>
+        ) : null}
       </span>
     );
   }
@@ -260,15 +346,43 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
     const displayValue = String(data);
     const isMatch = matchesSearch(displayValue);
     return (
-      <span className={`json-value json-number ${isMatch ? 'json-match' : ''}`}>
-        {highlightMatch(displayValue)}
+      <span className="group inline-flex items-center gap-1">
+        <span className={`json-value json-number ${isMatch ? 'json-match' : ''}`}>
+          {highlightMatch(displayValue)}
+        </span>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveVariable(path, data);
+            }}
+            title="Save as variable"
+          >
+            <Copy className="h-3 w-3 text-[var(--vscode-descriptionForeground)]" />
+          </button>
+        ) : null}
       </span>
     );
   }
 
   if (typeof data === 'boolean') {
     return (
-      <span className="json-value json-boolean">{String(data)}</span>
+      <span className="group inline-flex items-center gap-1">
+        <span className="json-value json-boolean">{String(data)}</span>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSaveVariable(path, data);
+            }}
+            title="Save as variable"
+          >
+            <Copy className="h-3 w-3 text-[var(--vscode-descriptionForeground)]" />
+          </button>
+        ) : null}
+      </span>
     );
   }
 
@@ -351,6 +465,18 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
         >
           <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">JSON</span>
         </button>
+        {onSaveVariable ? (
+          <button
+            className="json-copy-btn opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSaveVariable(path, data);
+            }}
+            title="Save as variable"
+          >
+            <span className="text-[10px] text-[var(--vscode-descriptionForeground)]">VAR</span>
+          </button>
+        ) : null}
       </div>
       {isExpanded && count > 0 && (
         <div className="json-children pl-4 border-l border-[var(--vscode-editorIndentGuide-background)] ml-2">
@@ -384,6 +510,7 @@ const JsonTreeNode: React.FC<JsonTreeNodeProps> = ({
                   forceExpand={forceExpand}
                   onCopyPath={onCopyPath}
                   onCopyValue={onCopyValue}
+                  onSaveVariable={onSaveVariable}
                   keyName={keyStr}
                   isArrayIndex={isArray}
                 />

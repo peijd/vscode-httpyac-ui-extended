@@ -1,10 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { UrlBar } from '@/components/request';
 import { useStore, useVsCodeMessages } from '@/hooks';
+import { buildPreviewVariables, resolveTemplatePreview } from '@/lib/variablePreview';
 
 export const QuickRequest: React.FC = () => {
-  const { currentRequest, isLoading, setMethod, setUrl } = useStore();
+  const { currentRequest, isLoading, setMethod, setUrl, environmentSnapshot, activeEnvironments } = useStore();
   const { sendRequest, openInEditor } = useVsCodeMessages();
+  const previewVariables = useMemo(
+    () => (environmentSnapshot ? buildPreviewVariables(environmentSnapshot, activeEnvironments) : undefined),
+    [environmentSnapshot, activeEnvironments]
+  );
+  const urlPreview = useMemo(() => {
+    if (!previewVariables) {
+      return resolveTemplatePreview('', {});
+    }
+    return resolveTemplatePreview(currentRequest.url || '', previewVariables);
+  }, [currentRequest.url, previewVariables]);
 
   const handleSend = () => {
     if (currentRequest.url) {
@@ -24,6 +35,7 @@ export const QuickRequest: React.FC = () => {
           onUrlChange={setUrl}
           onSend={handleSend}
           className="flex-wrap"
+          preview={urlPreview}
         />
         <button
           className="text-xs text-vscode-link hover:underline"
@@ -35,4 +47,3 @@ export const QuickRequest: React.FC = () => {
     </div>
   );
 };
-

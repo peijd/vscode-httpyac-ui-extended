@@ -13,6 +13,7 @@
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/language": "^6.10.2",
+    "cm6-graphql": "^0.2.1",
     "@codemirror/lint": "^6.8.2",
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.4",

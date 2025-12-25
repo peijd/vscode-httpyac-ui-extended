@@ -50,7 +50,7 @@ function renderTestSummary(entry: BatchRunEntry): string {
 
 function renderKeyValues(items?: KeyValue[]): React.ReactNode {
   if (!items || items.length === 0) {
-    return <div className="text-xs text-[var(--vscode-descriptionForeground)]">无</div>;
+    return <div className="text-xs text-[var(--vscode-descriptionForeground)]">None</div>;
   }
   return (
     <div className="space-y-1 text-xs">
@@ -463,7 +463,7 @@ export const RunnerApp: React.FC = () => {
                                       <div className="runner-section-title">Response</div>
                                       <div className="runner-section-body">
                                         <div className="text-xs">
-                                          状态：{response?.status || entry.status || '-'} {response?.statusText || entry.statusText || ''}
+                                          Status: {response?.status || entry.status || '-'} {response?.statusText || entry.statusText || ''}
                                         </div>
                                         <div className="runner-kv">
                                           <div className="runner-kv-title">Headers</div>
@@ -478,7 +478,7 @@ export const RunnerApp: React.FC = () => {
                                               ))}
                                             </div>
                                           ) : (
-                                            <div className="text-xs text-[var(--vscode-descriptionForeground)]">无</div>
+                                            <div className="text-xs text-[var(--vscode-descriptionForeground)]">None</div>
                                           )}
                                         </div>
                                         {response?.body ? (

@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { addMessageListener, postMessage } from '@/lib/vscode';
 import { useStore } from './useStore';
-import type { Message, HttpRequest, HttpResponse } from '@/types';
+import type { Message, HttpRequest, HttpResponse, RuntimeVariablePayload, EnvironmentSnapshot } from '@/types';
 import { generateId } from '@/lib/utils';
 
 export function useEditorMessages() {
@@ -14,6 +14,7 @@ export function useEditorMessages() {
     setRequestText,
     setEnvironments,
     setActiveEnvironments,
+    setEnvironmentSnapshot,
   } = useStore();
 
   // Code generation state
@@ -50,6 +51,9 @@ export function useEditorMessages() {
           setActiveEnvironments(envData.active);
           break;
         }
+        case 'environmentSnapshotUpdated':
+          setEnvironmentSnapshot(message.payload as EnvironmentSnapshot);
+          break;
         case 'setRequest':
           setCurrentRequest(message.payload as HttpRequest);
           break;
@@ -65,7 +69,16 @@ export function useEditorMessages() {
     });
 
     return unsubscribe;
-  }, [setResponse, setLoading, setError, setRequestText, setCurrentRequest, setEnvironments, setActiveEnvironments]);
+  }, [
+    setResponse,
+    setLoading,
+    setError,
+    setRequestText,
+    setCurrentRequest,
+    setEnvironments,
+    setActiveEnvironments,
+    setEnvironmentSnapshot,
+  ]);
 
   const sendRequest = useCallback(
     (request?: HttpRequest) => {
@@ -125,6 +138,14 @@ export function useEditorMessages() {
     postMessage('ready');
   }, []);
 
+  const requestEnvironmentSnapshot = useCallback(() => {
+    postMessage('getEnvironmentSnapshot');
+  }, []);
+
+  const setRuntimeVariable = useCallback((payload: RuntimeVariablePayload) => {
+    postMessage('setRuntimeVariable', payload);
+  }, []);
+
   const generateCode = useCallback(
     (target: string, client: string, request?: HttpRequest) => {
       const req = request || currentRequest;
@@ -149,6 +170,8 @@ export function useEditorMessages() {
     openSourceLocation,
     attachToHttpFile,
     notifyReady,
+    requestEnvironmentSnapshot,
+    setRuntimeVariable,
     generateCode,
     generatedCode,
     isGeneratingCode,

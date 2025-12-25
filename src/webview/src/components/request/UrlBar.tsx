@@ -4,6 +4,7 @@ import { MethodSelect } from './MethodSelect';
 import { Play, Loader2, Save } from 'lucide-react';
 import type { HttpMethod } from '@/types';
 import { cn } from '@/lib/utils';
+import type { VariablePreviewResult } from '@/lib/variablePreview';
 
 interface UrlBarProps {
   method: HttpMethod;
@@ -15,6 +16,7 @@ interface UrlBarProps {
   onSave?: () => void;
   showSave?: boolean;
   className?: string;
+  preview?: VariablePreviewResult | null;
 }
 
 export const UrlBar: React.FC<UrlBarProps> = ({
@@ -27,6 +29,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
   onSave,
   showSave = false,
   className,
+  preview,
 }) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isLoading) {
@@ -35,15 +38,30 @@ export const UrlBar: React.FC<UrlBarProps> = ({
   };
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={cn('flex items-start gap-2', className)}>
       <MethodSelect value={method} onChange={onMethodChange} />
-      <Input
-        value={url}
-        onChange={(e) => onUrlChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Enter request URL..."
-        className="flex-1 font-mono"
-      />
+      <div className="flex-1 flex flex-col gap-1">
+        <Input
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter request URL..."
+          className="flex-1 font-mono"
+        />
+        {preview?.hasTemplate ? (
+          <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
+            <div className="truncate">Preview: {preview.resolved}</div>
+            {preview.missing.length > 0 ? (
+              <div className="text-[var(--vscode-errorForeground)]">
+                Missing: {preview.missing.join(', ')}
+              </div>
+            ) : null}
+            {preview.dynamic.length > 0 ? (
+              <div>Dynamic: {preview.dynamic.join(', ')}</div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <Button onClick={onSend} disabled={isLoading || !url} className="gap-2">
         {isLoading ? (
           <>
@@ -66,4 +84,3 @@ export const UrlBar: React.FC<UrlBarProps> = ({
     </div>
   );
 };
-

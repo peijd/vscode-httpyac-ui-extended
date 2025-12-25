@@ -3,6 +3,7 @@ import { Button } from '@/components/ui';
 import { GripVertical, Trash2 } from 'lucide-react';
 import type { KeyValue } from '@/types';
 import { cn, generateId } from '@/lib/utils';
+import { resolveTemplatePreview, truncatePreview } from '@/lib/variablePreview';
 
 interface KeyValueEditorProps {
   items: KeyValue[];
@@ -14,6 +15,7 @@ interface KeyValueEditorProps {
   keyPlaceholder?: string;
   valuePlaceholder?: string;
   className?: string;
+  previewVariables?: Record<string, string>;
 }
 
 export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
@@ -26,6 +28,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
   className,
+  previewVariables,
 }) => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -123,8 +126,12 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
           </tr>
         </thead>
         <tbody>
-          {items.map((item, index) => (
-            <tr 
+          {items.map((item, index) => {
+            const preview = previewVariables ? resolveTemplatePreview(item.value || '', previewVariables) : null;
+            const previewText = preview ? truncatePreview(preview.resolved) : null;
+            const hasPreview = !!preview && preview.hasTemplate;
+            return (
+            <tr
               key={item.id} 
               className={cn(
                 'border-b border-[var(--vscode-panel-border)] hover:bg-[var(--vscode-list-hoverBackground)] transition-colors',
@@ -227,6 +234,24 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
                     !item.enabled && 'line-through'
                   )}
                 />
+                {hasPreview && preview && previewText ? (
+                  <div className="mt-1 text-[10px] text-[var(--vscode-descriptionForeground)]">
+                    <div className="truncate">
+                      Preview: {previewText.text}
+                      {previewText.truncated ? ' (truncated)' : ''}
+                    </div>
+                    {preview.missing.length > 0 ? (
+                      <div className="text-[var(--vscode-errorForeground)]">
+                        Missing: {preview.missing.join(', ')}
+                      </div>
+                    ) : null}
+                    {preview.dynamic.length > 0 ? (
+                      <div className="text-[var(--vscode-descriptionForeground)]">
+                        Dynamic: {preview.dynamic.join(', ')}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </td>
               <td className="p-2 text-center">
                 <Button
@@ -239,7 +264,8 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({
                 </Button>
               </td>
             </tr>
-          ))}
+            );
+          })}
           {/* Add new row */}
           <tr className="border-b border-[var(--vscode-panel-border)]">
             <td className="p-2 text-center">

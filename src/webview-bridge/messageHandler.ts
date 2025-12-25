@@ -148,6 +148,9 @@ export class WebviewMessageHandler implements vscode.Disposable {
           message.requestId
         );
         break;
+      case 'setRuntimeVariable':
+        await this.handleSetRuntimeVariable(message.payload as { name: string; value: string });
+        break;
       case 'ready':
         await Promise.all([
           this.broadcastEnvironmentState(webview),
@@ -159,6 +162,14 @@ export class WebviewMessageHandler implements vscode.Disposable {
       default:
         console.log('Unhandled message type:', message.type);
     }
+  }
+
+  private async handleSetRuntimeVariable(payload: { name: string; value: string }): Promise<void> {
+    if (!payload?.name) {
+      return;
+    }
+    this.documentStore.updateRuntimeVariables({ [payload.name]: payload.value });
+    await this.broadcastEnvironmentSnapshot();
   }
 
   private async handleGetRequestText(request: HttpRequest, webview: vscode.Webview, requestId?: string): Promise<void> {
@@ -1784,7 +1795,7 @@ export class WebviewMessageHandler implements vscode.Disposable {
       }
       const resolved = await httpyac.utils.replaceVariables(value, type, processorContext);
       if (resolved === httpyac.HookCancel) {
-        throw new Error('请求已取消');
+        throw new Error('Request was canceled.');
       }
       if (typeof resolved === 'string') {
         return resolved;

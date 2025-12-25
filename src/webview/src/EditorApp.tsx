@@ -1,14 +1,15 @@
 /* eslint-env browser */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Button } from '@/components/ui';
 import { KeyValueEditor, BodyEditor, AuthEditor, MethodSelect, CodeGenerator } from '@/components/request';
 import { CodeEditor } from '@/components/common/CodeEditor';
 import { ResponseViewer } from '@/components/response';
 import { useStore, useEditorMessages } from '@/hooks';
-import { Save, Code, Copy, FileCode } from 'lucide-react';
+import { Save, Code, Copy, FileCode, CopyPlus } from 'lucide-react';
 import type { HttpRequest, KeyValue } from '@/types';
 import { generateId } from '@/lib/utils';
 import { parseHeaderLines, parseParamText, parseCurlHeaders, parseCurlParams, extractCurlBaseUrl } from '@/lib/importParsers';
+import { buildPreviewVariables, resolveTemplatePreview } from '@/lib/variablePreview';
 
 // Declare global window property for initial request
 declare global {
@@ -84,6 +85,8 @@ export const EditorApp: React.FC = () => {
     setTestScript,
     setError,
     activeEnvironments,
+    environmentSnapshot,
+    setResponse,
   } = useStore();
 
   const {
@@ -95,6 +98,8 @@ export const EditorApp: React.FC = () => {
     openSourceLocation,
     attachToHttpFile,
     getRequestText,
+    setRuntimeVariable,
+    requestEnvironmentSnapshot,
     generateCode,
     generatedCode,
     isGeneratingCode,
@@ -124,6 +129,17 @@ export const EditorApp: React.FC = () => {
       ? `L${source.regionStartLine + 1}${hasEndLine ? `-${source.regionEndLine! + 1}` : ''}`
       : '';
 
+  const previewVariables = useMemo(
+    () => (environmentSnapshot ? buildPreviewVariables(environmentSnapshot, activeEnvironments) : undefined),
+    [environmentSnapshot, activeEnvironments]
+  );
+  const urlPreview = useMemo(() => {
+    if (!previewVariables) {
+      return resolveTemplatePreview('', {});
+    }
+    return resolveTemplatePreview(currentRequest.url || '', previewVariables);
+  }, [currentRequest.url, previewVariables]);
+
   // Initialize on mount and load initial request if present
   useEffect(() => {
     // Check for initial request embedded in HTML
@@ -136,7 +152,8 @@ export const EditorApp: React.FC = () => {
     }
     
     notifyReady();
-  }, [notifyReady, setCurrentRequest]);
+    requestEnvironmentSnapshot();
+  }, [notifyReady, requestEnvironmentSnapshot, setCurrentRequest]);
 
   useEffect(() => {
     if (!pendingRequestTextId || requestTextRequestId !== pendingRequestTextId || requestText === null) {
@@ -171,6 +188,34 @@ export const EditorApp: React.FC = () => {
   const handleBodyChange = (body: typeof currentRequest.body) => {
     setBodyType(body.type);
     setBodyContent(body.content);
+  };
+
+  const cloneKeyValues = (items?: KeyValue[]) =>
+    (items || []).map(item => ({
+      ...item,
+      id: generateId(),
+    }));
+
+  const handleDuplicateRequest = () => {
+    const nextName = currentRequest.name?.trim()
+      ? `${currentRequest.name} Copy`
+      : `${currentRequest.method} ${currentRequest.url}`.trim() + ' Copy';
+    const clonedRequest: HttpRequest = {
+      ...currentRequest,
+      id: generateId(),
+      name: nextName,
+      params: cloneKeyValues(currentRequest.params),
+      headers: cloneKeyValues(currentRequest.headers),
+      meta: cloneKeyValues(currentRequest.meta || []),
+      body: {
+        ...currentRequest.body,
+        formData: currentRequest.body.formData ? cloneKeyValues(currentRequest.body.formData) : undefined,
+      },
+      auth: JSON.parse(JSON.stringify(currentRequest.auth || { type: 'none' })),
+      source: undefined,
+    };
+    setCurrentRequest(clonedRequest);
+    setResponse(null);
   };
 
   const handleSave = () => {
@@ -348,7 +393,7 @@ export const EditorApp: React.FC = () => {
           title: 'Pre-request Script',
           value: currentRequest.preRequestScript || '',
           placeholder: '// Runs before request\n',
-          description: '在发送请求前执行，可用于准备变量或设置环境。',
+          description: 'Runs before sending the request; use it to prepare variables or set the environment.',
           snippets: PRE_REQUEST_SNIPPETS,
           onChange: setPreRequestScript,
         }
@@ -356,7 +401,7 @@ export const EditorApp: React.FC = () => {
           title: 'Post-request Script',
           value: currentRequest.testScript || '',
           placeholder: '// Runs after response\n',
-          description: '在收到响应后执行，可用于断言与变量提取。',
+          description: 'Runs after the response; use it for assertions and variable extraction.',
           snippets: TEST_SNIPPETS,
           onChange: setTestScript,
         };
@@ -386,6 +431,15 @@ export const EditorApp: React.FC = () => {
     setResponseCopyFeedback('Response copied');
     window.setTimeout(() => setResponseCopyFeedback(''), 1500);
   };
+
+  const handleSaveRuntimeVariable = useCallback(
+    (payload: { name: string; value: string; path: string }) => {
+      setRuntimeVariable({ name: payload.name, value: payload.value });
+      setResponseCopyFeedback(`Saved variable: ${payload.name}`);
+      window.setTimeout(() => setResponseCopyFeedback(''), 1500);
+    },
+    [setRuntimeVariable]
+  );
 
   const formatLastSent = (timestamp: number | null) => {
     if (!timestamp) {
@@ -509,6 +563,15 @@ export const EditorApp: React.FC = () => {
             <Button
               variant="ghost"
               size="icon"
+              title="Duplicate request"
+              className="h-9 w-9 ui-hover"
+              onClick={handleDuplicateRequest}
+            >
+              <CopyPlus className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               title="Preview request text"
               className="h-9 w-9 ui-hover"
               onClick={() => requestPreview('preview')}
@@ -536,6 +599,21 @@ export const EditorApp: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {urlPreview.hasTemplate ? (
+        <div className="px-4 pb-2 text-[10px] text-[var(--vscode-descriptionForeground)] flex flex-wrap items-center gap-2">
+          <span className="ui-chip">URL Preview</span>
+          <span className="truncate max-w-[60%]">{urlPreview.resolved}</span>
+          {urlPreview.missing.length > 0 ? (
+            <span className="text-[var(--vscode-errorForeground)]">
+              Missing: {urlPreview.missing.join(', ')}
+            </span>
+          ) : null}
+          {urlPreview.dynamic.length > 0 ? (
+            <span>Dynamic: {urlPreview.dynamic.join(', ')}</span>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Source info */}
       <div className="ui-subbar px-4 py-2 text-xs text-[var(--vscode-descriptionForeground)] flex flex-wrap items-center justify-between gap-4">
@@ -809,6 +887,7 @@ export const EditorApp: React.FC = () => {
                   onItemsChange={(items) => updateRequest({ params: items })}
                   keyPlaceholder="Parameter name"
                   valuePlaceholder="Parameter value"
+                  previewVariables={previewVariables}
                 />
               </TabsContent>
 
@@ -863,11 +942,16 @@ export const EditorApp: React.FC = () => {
                   onItemsChange={(items) => updateRequest({ headers: items })}
                   keyPlaceholder="Header name"
                   valuePlaceholder="Header value"
+                  previewVariables={previewVariables}
                 />
               </TabsContent>
 
               <TabsContent value="body" className="m-0 p-4 h-full">
-                <BodyEditor body={currentRequest.body} onChange={handleBodyChange} />
+                <BodyEditor
+                  body={currentRequest.body}
+                  onChange={handleBodyChange}
+                  previewVariables={previewVariables}
+                />
               </TabsContent>
 
               <TabsContent value="scripts" className="m-0 p-4 h-full">
@@ -913,8 +997,8 @@ export const EditorApp: React.FC = () => {
                       })}
                     </div>
                     <div className="ui-card p-3 text-[10px] text-[var(--vscode-descriptionForeground)] space-y-1">
-                      <div>脚本将被写入 .http 的 &gt; {'{% %}'} 块。</div>
-                      <div>支持 console.log 输出运行日志。</div>
+                      <div>Scripts are written into the .http &gt; {'{% %}'} block.</div>
+                      <div>console.log is supported for runtime logs.</div>
                     </div>
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col min-h-0">
@@ -928,12 +1012,12 @@ export const EditorApp: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-[10px] text-[var(--vscode-descriptionForeground)] whitespace-nowrap">
-                        行 {scriptStats.lines} · 字符 {scriptStats.chars}
+                        Lines {scriptStats.lines} · Chars {scriptStats.chars}
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
-                        {scriptStats.empty ? '暂无脚本，先从片段开始。' : '可从片段快速补全常用逻辑。'}
+                        {scriptStats.empty ? 'No script yet. Start from a snippet.' : 'Use snippets to quickly fill common logic.'}
                       </div>
                       <div className="flex items-center gap-1 overflow-x-auto">
                         {activeScript.snippets.map(snippet => (
@@ -1002,6 +1086,7 @@ export const EditorApp: React.FC = () => {
               request={currentRequest}
               onSaveSnippet={() => saveToHttpFile(currentRequest)}
               onAppendSnippet={() => appendToHttpFile(currentRequest)}
+              onSaveVariable={handleSaveRuntimeVariable}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-[var(--vscode-descriptionForeground)]">

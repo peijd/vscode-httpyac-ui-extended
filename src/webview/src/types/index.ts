@@ -236,10 +236,16 @@ export type MessageType =
   | 'getRunnerResults'
   | 'runnerResultsUpdated'
   | 'setRequest'
+  | 'setRuntimeVariable'
   | 'showNotification'
   | 'generateCode'
   | 'codeGenerated'
   | 'ready';
+
+export interface RuntimeVariablePayload {
+  name: string;
+  value: string;
+}
 
 export interface Message<T = unknown> {
   type: MessageType;

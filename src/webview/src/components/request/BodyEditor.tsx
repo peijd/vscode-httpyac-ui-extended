@@ -17,10 +17,12 @@ import {
   tryParseJson,
 } from '@/lib/utils';
 import { CodeEditor } from '@/components/common/CodeEditor';
+import { resolveTemplatePreview, truncatePreview } from '@/lib/variablePreview';
 
 interface BodyEditorProps {
   body: RequestBody;
   onChange: (body: RequestBody) => void;
+  previewVariables?: Record<string, string>;
 }
 
 const BODY_TYPES: { value: BodyType; label: string }[] = [
@@ -35,7 +37,7 @@ const BODY_TYPES: { value: BodyType; label: string }[] = [
   { value: 'binary', label: 'Binary/File' },
 ];
 
-export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
+export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange, previewVariables }) => {
 
   const updateHeaders = (contentType: string) => {
     const { currentRequest, updateHeader, addHeader } = useStore.getState();
@@ -125,6 +127,102 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
         return estimateBytes(body.content || '');
     }
   }, [body]);
+
+  const bodyPreview = useMemo(() => {
+    if (!previewVariables) {
+      return null;
+    }
+    return resolveTemplatePreview(body.content || '', previewVariables);
+  }, [body.content, previewVariables]);
+
+  const renderPreview = (label: string) => {
+    if (!bodyPreview || !bodyPreview.hasTemplate) {
+      return null;
+    }
+    const previewText = truncatePreview(bodyPreview.resolved);
+    return (
+      <div className="mt-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
+        <div className="flex items-center gap-2">
+          <span className="ui-chip">{label} Preview</span>
+          {previewText.truncated ? (
+            <span className="ui-chip">Truncated</span>
+          ) : null}
+        </div>
+        <pre className="mt-1 max-h-40 overflow-auto rounded bg-[var(--vscode-editor-background)] p-2 text-[11px]">
+          {previewText.text}
+        </pre>
+        {bodyPreview.missing.length > 0 ? (
+          <div className="mt-1 text-[var(--vscode-errorForeground)]">
+            Missing: {bodyPreview.missing.join(', ')}
+          </div>
+        ) : null}
+        {bodyPreview.dynamic.length > 0 ? (
+          <div className="mt-1">Dynamic: {bodyPreview.dynamic.join(', ')}</div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderPreviewPanel = (label: string) => {
+    const hasTemplate = bodyPreview?.hasTemplate;
+    const missingCount = bodyPreview?.missing.length || 0;
+    const dynamicCount = bodyPreview?.dynamic.length || 0;
+    const used = bodyPreview?.used || [];
+    const previewMap = previewVariables || {};
+    return (
+      <div className="w-72 shrink-0 flex flex-col gap-3 min-h-0">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] uppercase tracking-wide text-[var(--vscode-descriptionForeground)]">
+            {label} Preview
+          </div>
+          <div className="flex items-center gap-1">
+            {missingCount > 0 ? (
+              <span className="ui-chip text-[10px] text-[var(--vscode-errorForeground)]">Missing {missingCount}</span>
+            ) : null}
+            {dynamicCount > 0 ? (
+              <span className="ui-chip text-[10px]">Dynamic {dynamicCount}</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="ui-card p-2 flex-1 min-h-0 text-[10px] text-[var(--vscode-descriptionForeground)]">
+          {hasTemplate && used.length > 0 ? (
+            <div className="h-full max-h-[320px] overflow-auto rounded bg-[var(--vscode-editor-background)] p-2 text-[11px] space-y-1">
+              {used.map((name) => {
+                const isMissing = bodyPreview?.missing.includes(name);
+                const isDynamic = bodyPreview?.dynamic.includes(name);
+                const rawValue = previewMap[name];
+                const value =
+                  isDynamic ? 'Dynamic variable' : isMissing ? 'Undefined' : rawValue ?? '';
+                const display = value.length > 120 ? `${value.slice(0, 120)}…` : value;
+                return (
+                  <div key={name} className="flex items-start gap-2">
+                    <span className="ui-chip shrink-0">{name}</span>
+                    <span
+                      className={
+                        isMissing
+                          ? 'text-[var(--vscode-errorForeground)]'
+                          : 'text-[var(--vscode-foreground)]'
+                      }
+                    >
+                      {display || '""'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-[var(--vscode-descriptionForeground)]">
+              No variable placeholders detected
+            </div>
+          )}
+        </div>
+        <div className="ui-card p-3 text-[10px] text-[var(--vscode-descriptionForeground)] space-y-1">
+          <div>Preview uses the current environment + runtime variables only.</div>
+          <div>Dynamic variables are not replaced; they are only marked.</div>
+        </div>
+      </div>
+    );
+  };
 
   const handleFormat = () => {
     onChange({ ...body, content: formattedJson });
@@ -238,10 +336,11 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
         </TabsContent>
 
         <TabsContent value="json">
-            <div className="space-y-2">
+          <div className="flex gap-4 min-h-0">
+            <div className="flex-1 min-w-0 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-[var(--vscode-descriptionForeground)]">
-                JSON editor
+                  JSON editor
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1">
@@ -281,21 +380,23 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
                   </span>
                 </div>
               </div>
-            <CodeEditor
-              value={body.content}
-              language="json"
-              placeholder='{\n  "key": "value"\n}'
-              onChange={(value) => onChange({ ...body, content: value })}
-              onFormat={handleFormat}
-              minHeight={300}
-              maxHeight={420}
-            />
-            {errorInfo ? (
-              <div className="text-xs text-[var(--vscode-errorForeground)]">
-                {errorInfo.line ? `Line ${errorInfo.line}, Col ${errorInfo.column ?? 1}: ` : ''}
-                {errorInfo.message}
-              </div>
-            ) : null}
+              <CodeEditor
+                value={body.content}
+                language="json"
+                placeholder='{\n  "key": "value"\n}'
+                onChange={(value) => onChange({ ...body, content: value })}
+                onFormat={handleFormat}
+                minHeight={300}
+                maxHeight={420}
+              />
+              {errorInfo ? (
+                <div className="text-xs text-[var(--vscode-errorForeground)]">
+                  {errorInfo.line ? `Line ${errorInfo.line}, Col ${errorInfo.column ?? 1}: ` : ''}
+                  {errorInfo.message}
+                </div>
+              ) : null}
+            </div>
+            {renderPreviewPanel('JSON')}
           </div>
         </TabsContent>
 
@@ -309,6 +410,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
               onItemsChange={(items) => onChange({ ...body, formData: items })}
               keyPlaceholder="Field name"
               valuePlaceholder="Field value"
+              previewVariables={previewVariables}
             />
             <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
               Size {formatBytes(bodySize)}
@@ -326,6 +428,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
               onItemsChange={(items) => onChange({ ...body, formData: items })}
               keyPlaceholder="Field name"
               valuePlaceholder="Field value"
+              previewVariables={previewVariables}
             />
             <div className="text-[10px] text-[var(--vscode-descriptionForeground)]">
               Size {formatBytes(bodySize)}
@@ -376,6 +479,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
               className="code-area w-full min-h-[200px]"
               spellCheck={false}
             />
+            {renderPreview('Raw')}
           </div>
         </TabsContent>
 
@@ -415,13 +519,15 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
                 </span>
               </div>
             </div>
-            <textarea
+            <CodeEditor
               value={body.content}
-              onChange={(e) => onChange({ ...body, content: e.target.value })}
+              onChange={(value) => onChange({ ...body, content: value })}
               placeholder="query MyQuery {\n  viewer { id name }\n}\n"
-              className="code-area w-full min-h-[200px]"
-              spellCheck={false}
+              language="graphql"
+              minHeight={220}
+              maxHeight={420}
             />
+            {renderPreview('GraphQL')}
           </div>
         </TabsContent>
 
@@ -433,6 +539,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             className="code-area w-full min-h-[200px]"
             spellCheck={false}
           />
+          {renderPreview('NDJSON')}
           <div className="mt-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
             Size {formatBytes(bodySize)}
           </div>
@@ -446,6 +553,7 @@ export const BodyEditor: React.FC<BodyEditorProps> = ({ body, onChange }) => {
             className="code-area w-full min-h-[200px]"
             spellCheck={false}
           />
+          {renderPreview('XML')}
           <div className="mt-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
             Size {formatBytes(bodySize)}
           </div>
