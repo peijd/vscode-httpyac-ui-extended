@@ -15,6 +15,7 @@
 - TypeScript across both extension/runtime and React UI. Keep modules small and prefer descriptive filenames (`requestCommandsController.ts`).
 - Use Prettier (default config) and ESLint with `@typescript-eslint`. Run `npm run lint` before committing.
 - Stick to camelCase for variables/functions, PascalCase for classes/components, and prefix VS Code commands with `httpyac.` (see `src/config.ts`).
+- User-facing UI text must be in English (webview, prompts, tooltips, and status messages).
 
 ## Testing Guidelines
 - No automated test suite yet; rely on `npm run tsc -- --noEmit` and `npm run lint` as the fast regression checks.

@@ -10,13 +10,14 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { json } from '@codemirror/lang-json';
 import { javascript } from '@codemirror/lang-javascript';
+import { graphql } from 'cm6-graphql';
 import { linter, lintGutter, Diagnostic } from '@codemirror/lint';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
 interface CodeEditorProps {
   value: string;
-  language?: 'json' | 'text' | 'javascript';
+  language?: 'json' | 'text' | 'javascript' | 'graphql';
   readOnly?: boolean;
   minHeight?: number;
   maxHeight?: number;
@@ -156,6 +157,15 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
     if (language === 'javascript') {
       base.push(javascript({ typescript: false }));
+    }
+
+    if (language === 'graphql') {
+      const extensions = graphql();
+      if (Array.isArray(extensions)) {
+        base.push(...extensions);
+      } else {
+        base.push(extensions);
+      }
     }
 
     if (readOnly) {

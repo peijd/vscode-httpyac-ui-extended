@@ -236,6 +236,12 @@ export class DocumentStore extends utils.DisposeProvider implements IDocumentSto
         if (!context.config) {
           context.config = config;
         }
+        if (this.variables) {
+          context.variables = {
+            ...this.variables,
+            ...(context.variables || {}),
+          };
+        }
         context.activeEnvironment = context.activeEnvironment || this.getActiveEnvironment(context.httpFile);
         const result = await httpyac.send(context);
         this.variables = context.variables;
@@ -295,5 +301,18 @@ export class DocumentStore extends utils.DisposeProvider implements IDocumentSto
       this.fileEnvironments[key] = env;
     }
     this.activeEnvironment = env;
+  }
+
+  public updateRuntimeVariables(next: httpyac.Variables) {
+    if (!this.variables) {
+      this.variables = {};
+    }
+    for (const [key, value] of Object.entries(next)) {
+      if (!key) {
+        continue;
+      }
+      this.variables[key] = value;
+    }
+    this.documentStoreChangedEmitter.fire();
   }
 }

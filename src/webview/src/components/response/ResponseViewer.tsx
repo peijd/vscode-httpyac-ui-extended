@@ -14,11 +14,18 @@ interface ResponseViewerProps {
   request?: HttpRequest;
   onSaveSnippet?: () => void;
   onAppendSnippet?: () => void;
+  onSaveVariable?: (payload: { name: string; value: string; path: string }) => void;
 }
 
 const LARGE_RESPONSE_BYTES = 2 * 1024 * 1024;
 
-export const ResponseViewer: React.FC<ResponseViewerProps> = ({ response, request, onSaveSnippet, onAppendSnippet }) => {
+export const ResponseViewer: React.FC<ResponseViewerProps> = ({
+  response,
+  request,
+  onSaveSnippet,
+  onAppendSnippet,
+  onSaveVariable,
+}) => {
   const [bodyViewMode, setBodyViewMode] = useState<'structured' | 'raw' | 'preview'>('structured');
   const [copyFeedback, setCopyFeedback] = useState('');
   const [summaryOnly, setSummaryOnly] = useState(false);
@@ -261,7 +268,12 @@ export const ResponseViewer: React.FC<ResponseViewerProps> = ({ response, reques
                 </span>
               </div>
               <ScrollArea className="flex-1">
-                <ResponseBody body={response.body} contentType={response.contentType} viewMode={bodyViewMode} />
+                <ResponseBody
+                  body={response.body}
+                  contentType={response.contentType}
+                  viewMode={bodyViewMode}
+                  onSaveVariable={onSaveVariable}
+                />
               </ScrollArea>
             </TabsContent>
 

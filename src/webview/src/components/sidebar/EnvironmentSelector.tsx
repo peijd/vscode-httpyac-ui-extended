@@ -56,7 +56,7 @@ export const EnvironmentSelector: React.FC = () => {
             type="button"
             className="ui-chip ui-hover cursor-pointer"
             onClick={openEnvironmentSnapshot}
-            title="查看全部变量"
+            title="View all variables"
           >
             Vars {displayVarCount}
           </button>
